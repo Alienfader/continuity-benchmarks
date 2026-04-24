@@ -1,6 +1,6 @@
 # Continuity Benchmarks
 
-Reproducible benchmarks for evaluating structured-knowledge-graph retrieval in long-horizon AI agents — the architecture behind [Continuity](https://hackerware.com), with methodology comparable to MIT Media Lab's [ID-RAG paper](https://arxiv.org/abs/2509.25299) (Rahnama et al., 2025).
+Reproducible benchmarks for evaluating structured-knowledge-graph retrieval in long-horizon AI agents — the architecture behind [Continuity](https://hackerware.com), with methodology comparable to MIT Media Lab's [ID-RAG paper](https://arxiv.org/abs/2509.25299) (Platnick et al., 2025).
 
 ## TL;DR findings
 
@@ -139,7 +139,7 @@ The lift we observe is **of comparable magnitude** to ID-RAG's reported lift, on
 ```bibtex
 @misc{continuity-benchmarks-2026,
   title  = {Continuity Benchmarks: Structured Knowledge-Graph Retrieval for Long-Horizon AI Agents},
-  author = {Hackerware},
+  author = {Goncalves, Thiago},
   year   = {2026},
   url    = {https://github.com/alienfader/continuity-benchmarks}
 }
@@ -148,9 +148,9 @@ The lift we observe is **of comparable magnitude** to ID-RAG's reported lift, on
 And the methodology paper this work extends:
 
 ```bibtex
-@misc{rahnama2025idrag,
+@misc{platnick2025idrag,
   title  = {ID-RAG: Identity Retrieval-Augmented Generation for Long-Horizon Persona Coherence in Generative Agents},
-  author = {Rahnama, Hossein and others},
+  author = {Platnick, Daniel and others},
   year   = {2025},
   eprint = {2509.25299},
   archivePrefix = {arXiv},
