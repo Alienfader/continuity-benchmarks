@@ -1,0 +1,146 @@
+{
+  "project": "mobile-app",
+  "description": "20-question recall quiz for the habitus-mobile (React Native) fixture. Supersede pairs under test: auth (Clerk → Supabase) and E2E testing (Detox → Maestro).",
+  "questions": [
+    {
+      "id": "Q1",
+      "question": "Why React Native over Flutter?",
+      "groundTruth": "Team skill reuse with the React-based web dashboard; first-class RN support in our backend SDKs (Supabase, PostHog, Sentry) with weaker Flutter support; Hermes + JSC performance is sufficient for a habit tracker.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q2",
+      "question": "Why Expo (managed-with-prebuild) instead of bare RN?",
+      "groundTruth": "EAS Build + EAS Submit remove weekly Xcode/Gradle ops; prebuild allows native-config overrides when needed. The rule: do not eject.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q3",
+      "question": "Why Zustand over Redux or MobX?",
+      "groundTruth": "Redux Toolkit's boilerplate doesn't pay off at habitus's scale; MobX's observable proxies had edge-case issues with Hermes. Zustand is plain hooks + a store with selector memoization. Do not introduce Redux alongside.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q4",
+      "question": "What's the current auth system?",
+      "groundTruth": "Supabase Auth. It replaced Clerk because Clerk's per-MAU pricing was about to exceed Supabase Pro tier at ~30k MAU, and removing the Clerk-to-Supabase JWT exchange eliminated a login-failure source. Clerk is fully removed.",
+      "type": "supersedes-aware",
+      "correctAnswerAt": "after-supersedes-event"
+    },
+    {
+      "id": "Q5",
+      "question": "What's the current E2E testing framework?",
+      "groundTruth": "Maestro. It replaced Detox because Detox broke across RN upgrades (twice in 6 months), Maestro's YAML flows are maintainable by PMs/designers, and Maestro Cloud provides a device matrix. Detox is removed from the repo.",
+      "type": "supersedes-aware",
+      "correctAnswerAt": "after-supersedes-event"
+    },
+    {
+      "id": "Q6",
+      "question": "Was habitus always on Supabase Auth?",
+      "groundTruth": "No. Originally Clerk, superseded by Supabase Auth. The Clerk decision is marked superseded.",
+      "type": "supersedes-aware",
+      "correctAnswerAt": "after-supersedes-event"
+    },
+    {
+      "id": "Q7",
+      "question": "Was E2E always Maestro?",
+      "groundTruth": "No. Originally Detox (for its native RN synchronization). Replaced by Maestro after repeated upgrade breakage. The Detox decision is superseded.",
+      "type": "supersedes-aware",
+      "correctAnswerAt": "after-supersedes-event"
+    },
+    {
+      "id": "Q8",
+      "question": "A contractor proposes adding Firebase Auth alongside Supabase for Google Sign-In. OK?",
+      "groundTruth": "No. Auth is consolidated on Supabase — do not re-introduce a separate auth vendor. Google Sign-In should be wired through Supabase Auth's OAuth provider.",
+      "type": "conflict-resolution",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q9",
+      "question": "A PR proposes adding a new Detox E2E test 'because it's already in the codebase'. What's the call?",
+      "groundTruth": "Reject. Detox is fully removed. New E2E tests must be .maestro/flows/*.yaml files.",
+      "type": "conflict-resolution",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q10",
+      "question": "A PR wants to use AsyncStorage for persisting a new onboarding flag. Align?",
+      "groundTruth": "No. On-device KV is MMKV (~30x faster than AsyncStorage, synchronous). Use the MMKV-backed persist store. Never write PII to the default unencrypted partition.",
+      "type": "conflict-resolution",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q11",
+      "question": "Why react-native-mmkv over AsyncStorage?",
+      "groundTruth": "~30x faster cold reads (measured) and synchronous so no await on app startup; encrypted partition for auth-adjacent keys.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q12",
+      "question": "Why TanStack Query v5 over SWR?",
+      "groundTruth": "TanStack's mutation API (onMutate, onError, onSettled) handles optimistic habit-completion updates with rollback — SWR's approach was incomplete for this pattern. Default staleTime 30s. Never useEffect-fetch; go through a useQuery hook.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q13",
+      "question": "I want to add haptic feedback on habit completion. What's the right place to define the native bridge?",
+      "groundTruth": "Build it with Nitro Modules (smaller, faster bridges vs the old TurboModule API, supports shared C++ across iOS + Android). Do not use the old bridge API for new modules.",
+      "type": "application",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q14",
+      "question": "I'm adding a new animated progress bar on the streak screen. API choice?",
+      "groundTruth": "Reanimated 3 with shared values and useAnimatedStyle + withSpring. Do not animate layout props via setState — guaranteed jank on Android mid-tier devices.",
+      "type": "application",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q15",
+      "question": "I'm building a new signup form with 8 inputs. Form library?",
+      "groundTruth": "React Hook Form with the Zod resolver. RHF uses uncontrolled inputs by default so there's no re-render-per-keystroke — matters for deep forms. Reuse the same Zod schema used server-side.",
+      "type": "application",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q16",
+      "question": "Why Sentry over Firebase Crashlytics for crash tracking?",
+      "groundTruth": "Unifies with our web + backend Sentry project (one view per release). Source maps uploaded on every EAS build via post-build hook. Crashlytics is NOT installed — it would duplicate reports.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q17",
+      "question": "Why FCM + APNs directly instead of OneSignal or Expo Push?",
+      "groundTruth": "We need delivery-receipt data (OneSignal paywalls it); Expo Push added a 200-400ms relay hop. Server-side dispatch is a Supabase edge function. Token registration is on first login, not install.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q18",
+      "question": "Why Expo Router over React Navigation?",
+      "groundTruth": "File-based routing matches our Next.js web app's mental model (shortens onboarding for web devs); typed routes catch route-name typos at compile time.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q19",
+      "question": "Why PostHog (EU Cloud) over Amplitude or Mixpanel?",
+      "groundTruth": "Amplitude was expensive past 10M events/mo; Mixpanel had weaker cohort features. PostHog's feature-flag + experiment combo removes needing a second vendor. Session replay is off below the paywall (privacy).",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q20",
+      "question": "A PR switches copy to use template literals with ICU messages inline instead of going through FormatJS. Is that OK?",
+      "groundTruth": "No. Localization is FormatJS (react-intl), copy lives in src/locales/{lang}.json, and translated strings must not be concatenated in code — ICU plural/select rules need to stay parseable.",
+      "type": "conflict-resolution",
+      "correctAnswerAt": null
+    }
+  ]
+}

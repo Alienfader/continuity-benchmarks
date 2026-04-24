@@ -1,0 +1,146 @@
+{
+  "project": "infra-platform",
+  "description": "20-question recall quiz for the infra-platform fixture. Supersede pairs under test: logs (Loki → Vector + Elasticsearch) and tracing (Jaeger → Tempo).",
+  "questions": [
+    {
+      "id": "Q1",
+      "question": "What's the current log pipeline?",
+      "groundTruth": "Vector (collect + transform) into Elasticsearch (storage + search). It replaced Promtail + Loki because Loki's label-based model didn't serve free-text incident-response queries, Vector's DSL enables consistent enrichment (trace-id, tenant-id), and combining infra + security logs into the SIEM cluster removed duplicate infra. Loki is decommissioned.",
+      "type": "supersedes-aware",
+      "correctAnswerAt": "after-supersedes-event"
+    },
+    {
+      "id": "Q2",
+      "question": "What's the current tracing backend?",
+      "groundTruth": "Grafana Tempo. It replaced Jaeger because Tempo's S3-backed storage cut cost ~4x vs Jaeger-on-Elasticsearch, Grafana-native metrics→traces drill-down removed swivel-chairing with the Jaeger UI, and TraceQL is easier for on-call than Jaeger's search UI. Jaeger collectors are decommissioned.",
+      "type": "supersedes-aware",
+      "correctAnswerAt": "after-supersedes-event"
+    },
+    {
+      "id": "Q3",
+      "question": "Was the log pipeline always Vector + Elasticsearch?",
+      "groundTruth": "No. Originally Promtail + Loki → Grafana. Superseded by Vector + Elasticsearch. The Loki decision is marked superseded.",
+      "type": "supersedes-aware",
+      "correctAnswerAt": "after-supersedes-event"
+    },
+    {
+      "id": "Q4",
+      "question": "Was tracing always Tempo?",
+      "groundTruth": "No. Originally Jaeger (Elasticsearch backend). Superseded by Tempo. The Jaeger decision is marked superseded.",
+      "type": "supersedes-aware",
+      "correctAnswerAt": "after-supersedes-event"
+    },
+    {
+      "id": "Q5",
+      "question": "Why EKS over GKE?",
+      "groundTruth": "Rest of company infra (RDS, MSK, S3) is AWS-native (cross-cloud networking cost); IRSA maps IAM to Kubernetes service accounts; AWS support contract beats a fresh GCP contract. Fit decision, not a technical one.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q6",
+      "question": "Why Linkerd over Istio for the service mesh?",
+      "groundTruth": "~5x lower per-pod resource overhead (measured on 200-pod cluster); much smaller config surface (Istio's complexity was causing misconfigurations); mTLS on by default with no extra YAML.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q7",
+      "question": "Why Traefik over NGINX Ingress?",
+      "groundTruth": "Traefik's CRDs (IngressRoute, Middleware) model routing more cleanly than NGINX annotation-soup; built-in Let's Encrypt ACME; dynamic config reload without pod restarts.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q8",
+      "question": "Why HashiCorp Vault over SOPS for secrets?",
+      "groundTruth": "Vault's dynamic-secret engines issue short-lived DB credentials per pod (SOPS is static-only); audit log of access is a compliance requirement git history can't meet; Kubernetes auth method maps SAs to policies cleanly.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q9",
+      "question": "Why ArgoCD over Flux for GitOps?",
+      "groundTruth": "UI is useful for platform-customer engineers (non-K8s-expert); ApplicationSets fan out one manifest to N clusters (multi-region); sync waves order CRDs→operators→apps cleanly. Flux is 'purer' GitOps but UX gap was decisive.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q10",
+      "question": "A team wants to stand up a new Loki instance for their service's logs. Align?",
+      "groundTruth": "No. Loki is fully decommissioned. Logs flow through Vector → Elasticsearch. Do not stand up new Loki instances.",
+      "type": "conflict-resolution",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q11",
+      "question": "A PR adds a new Jaeger collector to an app's manifest. OK?",
+      "groundTruth": "No. Jaeger is decommissioned. OpenTelemetry exporters target Tempo; drop-replace the collector endpoint.",
+      "type": "conflict-resolution",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q12",
+      "question": "A team proposes deploying a service with `privileged: true` for a debug feature. Pass admission?",
+      "groundTruth": "No. OPA Gatekeeper constraints block `privileged: true`. Core constraints also require resource limits, signed images (Cosign), and team-attribution namespace labels.",
+      "type": "conflict-resolution",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q13",
+      "question": "A developer wants to commit SOPS-encrypted secrets to a feature repo instead of going through Vault. OK?",
+      "groundTruth": "No. Secrets are in HashiCorp Vault — SOPS-in-git was explicitly rejected. No plaintext (or SOPS-encrypted) secrets in any repo.",
+      "type": "conflict-resolution",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q14",
+      "question": "I'm standing up a new service. What's the deployment path end-to-end?",
+      "groundTruth": "Buildkite builds + pushes image to ECR and opens a PR against the manifest repo; ArgoCD syncs the new manifest. Service mesh via Linkerd (mTLS by default), ingress via Traefik, autoscaling via KEDA. Vault supplies secrets; Prometheus + Tempo + Vector collect observability.",
+      "type": "application",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q15",
+      "question": "I need to autoscale a consumer on SQS queue depth. What scaler and where do I configure it?",
+      "groundTruth": "KEDA with its SQS scaler. Scalers are defined per-service in that service's ArgoCD app. Plain HPA can't scale on SQS without a metrics adapter.",
+      "type": "application",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q16",
+      "question": "I'm editing a dashboard live in Grafana prod. What's the rule?",
+      "groundTruth": "Don't. Dashboards are managed as JSON-in-git, applied via grafana-operator. Changes go through a PR — no-one edits prod dashboards directly in the UI.",
+      "type": "application",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q17",
+      "question": "Why Prometheus + Thanos over Mimir?",
+      "groundTruth": "Thanos' sidecar model is simpler (Prometheus remains authoritative for recent data); existing Prometheus rules run unchanged; Thanos Ruler evaluates global recording rules. Retention: 14 days local, 1 year in S3.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q18",
+      "question": "Why Buildkite over GitHub Actions for CI?",
+      "groundTruth": "Hosted Actions runners don't fit VPC-only builds (private ECR, internal Artifactory). Buildkite's agent orchestration beats self-hosted GH runners; per-pipeline concurrency controls matter at our scale. Main monorepo is Buildkite-only.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q19",
+      "question": "Why Velero for cluster backups?",
+      "groundTruth": "Velero snapshots namespaced resources + PVs to S3 nightly. Kasten K10 was heavier to install and licensed; rolling our own was rejected. Restore drills are quarterly — a restore untested in 90 days is assumed broken. Critical namespaces (argocd, vault, gatekeeper-system) snapshot hourly.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q20",
+      "question": "Where do internal language packages (npm, pypi, Maven) live vs container images?",
+      "groundTruth": "Internal language packages are in JFrog Artifactory; container images are in ECR. GitHub Packages was rejected because one Artifactory server covers all three package types and we already had the contract.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    }
+  ]
+}

@@ -1,0 +1,146 @@
+{
+  "project": "ml-platform",
+  "description": "20-question recall quiz for the ml-platform fixture. Supersede pairs under test: serving (vLLM → TGI) and vector DB (pgvector → Qdrant).",
+  "questions": [
+    {
+      "id": "Q1",
+      "question": "What currently serves LLM inference?",
+      "groundTruth": "Hugging Face TGI. It replaced vLLM because TGI's LoRA-adapter-per-request matched our multi-tenant routing (vLLM's multi-LoRA was experimental), streaming + token-logprobs API fit product requirements, and quantization stability (GPTQ/AWQ) was better.",
+      "type": "supersedes-aware",
+      "correctAnswerAt": "after-supersedes-event"
+    },
+    {
+      "id": "Q2",
+      "question": "Where do RAG embeddings currently live?",
+      "groundTruth": "Qdrant (self-hosted cluster on GKE). It replaced pgvector after crossing 20M vectors: pgvector latency at the required recall was 200-400ms while Qdrant is sub-50ms; Qdrant's payload filtering scales linearly; horizontal scaling is first-class.",
+      "type": "supersedes-aware",
+      "correctAnswerAt": "after-supersedes-event"
+    },
+    {
+      "id": "Q3",
+      "question": "Was serving always on TGI?",
+      "groundTruth": "No. Originally vLLM. Superseded by TGI primarily because of multi-tenant LoRA-per-request support. The vLLM decision is marked superseded.",
+      "type": "supersedes-aware",
+      "correctAnswerAt": "after-supersedes-event"
+    },
+    {
+      "id": "Q4",
+      "question": "Was vector search always on Qdrant?",
+      "groundTruth": "No. Originally pgvector on Cloud SQL. Superseded by Qdrant at ~20M vectors for latency and horizontal-scale reasons. Postgres remains the source-of-truth for text chunks; Qdrant holds vectors + payload.",
+      "type": "supersedes-aware",
+      "correctAnswerAt": "after-supersedes-event"
+    },
+    {
+      "id": "Q5",
+      "question": "Why Argo Workflows over Kubeflow Pipelines for training orchestration?",
+      "groundTruth": "Kubeflow Pipelines pulls in an opinionated Kubeflow install; Metaflow assumes AWS and we're on GKE. Argo is a plain Kubernetes CRD so we reuse our RBAC and node-pool scheduling.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q6",
+      "question": "Why self-hosted MLflow instead of W&B for experiment tracking?",
+      "groundTruth": "Customer-data compliance blocks sending run metadata to W&B servers. MLflow's artifact store points at GCS; metadata DB is Cloud SQL Postgres. Every run must log `lora_r`, `lora_alpha`, `eval_loss`, `rouge_l`.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q7",
+      "question": "Why A100 over H100 GPUs?",
+      "groundTruth": "H100 availability was poor when we signed the reserved-capacity contract, H100 list price was ~2.5x A100, and LoRA fine-tuning (dominant workload) rarely hits the A100's memory ceiling.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q8",
+      "question": "Why LoRA adapters over full fine-tuning for customer-specific models?",
+      "groundTruth": "Adapters are ~100MB vs tens of GB for full models (cheap per-tenant storage); TGI hot-swaps adapters per request; LoRA training converges in hours on a single A100. Full fine-tuning is reserved for the base model.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q9",
+      "question": "A contributor proposes serving a new customer tenant via vLLM 'for throughput'. What's the call?",
+      "groundTruth": "Reject. Serving is TGI — the multi-tenant LoRA-per-request requirement is what drove the supersede. Add the tenant's LoRA to TGI's adapter routing.",
+      "type": "conflict-resolution",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q10",
+      "question": "A PR adds a pgvector HNSW index for a new embeddings table. Align?",
+      "groundTruth": "No. Vector search is Qdrant; pgvector was superseded. Add the collection to Qdrant with appropriate payload fields for tenant filtering.",
+      "type": "conflict-resolution",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q11",
+      "question": "A new model version is ready. How is promotion to Production gated?",
+      "groundTruth": "Via MLflow's model registry. Requirements: eval metrics within 5% of previous prod, manual approve in the registry UI, and a 24h shadow canary before full cutover. Models not in the registry are not served.",
+      "type": "application",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q12",
+      "question": "I need to kick off a training run on a customer dataset tagged pii_present=true. What must happen?",
+      "groundTruth": "Must use Opacus (DP-SGD) with per-customer epsilon budget. Budget is enforced at job-submit time — if remaining epsilon is less than required, the job refuses to start. Never train on PII-tagged data without DP enabled.",
+      "type": "application",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q13",
+      "question": "I'm adding inference for a new model family. What quantization does production use, and why?",
+      "groundTruth": "AWQ int4 (Activation-aware Weight Quantization). GPTQ was slightly lower quality in our A/B; bitsandbytes int8 was worse throughput on A100. Regression is measured on a 2k-prompt eval set before promotion. Never serve un-quantized in production.",
+      "type": "application",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q14",
+      "question": "Where do I get feature values at inference time?",
+      "groundTruth": "Feast online store (Redis on GKE). Never read features directly from BigQuery at inference — always via Feast.",
+      "type": "application",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q15",
+      "question": "Why GKE over EC2/EKS for training infra?",
+      "groundTruth": "A100 availability in us-central1 was consistent while EC2 P4 had 6-week waits during our ramp. GKE Autopilot was rejected because we need fine-grained GPU node-pool control. Spot VMs for short jobs (<1h), on-demand for long runs.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q16",
+      "question": "Why Feast over Tecton for the feature store?",
+      "groundTruth": "Tecton was too expensive for our feature-row volume; rolling our own was maintenance burden. Feast's online store is Redis on GKE; offline is BigQuery. Feature views live in features/*.py applied via `feast apply` in CI.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q17",
+      "question": "Why PyTorch over JAX?",
+      "groundTruth": "Team's PyTorch muscle memory is deeper; HuggingFace ecosystem (Transformers, PEFT, TRL) is PyTorch-native; torch.compile closed most of the JAX perf gap. No TensorFlow anywhere.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q18",
+      "question": "What's the format for training data and how is versioning handled?",
+      "groundTruth": "Parquet on GCS loaded via webdataset. Versioning is by content hash — never mutate in place. Parquet was chosen over TFRecord (TF-centric) and JSONL (10x size).",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q19",
+      "question": "Why Evidently AI for model monitoring?",
+      "groundTruth": "WhyLabs is SaaS-only for the tier we wanted; Arize was expensive at our prediction volume. Evidently reports generate nightly via Argo, published to a Grafana iframe. Drift alerts feed PagerDuty with 2-hour dedup.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q20",
+      "question": "A PR wants to run fine-tuning CI on GitHub-hosted GPU runners. OK?",
+      "groundTruth": "No. CI uses self-hosted GPU runners (A10s, not A100s) in a dedicated GKE node pool via Actions Runner Controller — runner-minute pricing on hosted GPU services exceeds our steady-state self-hosted cost.",
+      "type": "conflict-resolution",
+      "correctAnswerAt": null
+    }
+  ]
+}

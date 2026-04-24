@@ -1,0 +1,146 @@
+{
+  "project": "data-pipeline",
+  "description": "20-question recall quiz for the data-pipeline fixture. Supersede pairs under test: Kafka serialization (Avro → Protobuf) and data quality (Great Expectations → Soda Core).",
+  "questions": [
+    {
+      "id": "Q1",
+      "question": "Why MSK (Kafka) over Kinesis for streaming ingestion?",
+      "groundTruth": "MSK provides 30+ day retention for schema-change backfills (Kinesis caps at 7 days), Debezium CDC is first-class on Kafka Connect, and downstream tools (Flink, Materialize) assume Kafka semantics.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q2",
+      "question": "Why Dagster over Airflow for batch orchestration?",
+      "groundTruth": "Asset-based model maps to warehouse tables directly; software-defined assets integrate natively with dbt; local dev via `dagster dev` runs the same code as prod. Airflow's task-graph model didn't match our asset-centric mental model.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q3",
+      "question": "Why Snowflake over BigQuery and Redshift?",
+      "groundTruth": "Multi-cloud customer base requires cloud-portability (BigQuery is GCP-only); Redshift's vacuum/distkey operational burden was too high. Snowflake's separation of storage and compute lets us scale compute per dbt job.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q4",
+      "question": "Why dbt Core for transformations, and what's the rule about stored procedures?",
+      "groundTruth": "dbt Core keeps transforms in versioned SQL, accessible to analysts, with tests required on mart-layer models. Stored procedures are forbidden — every transform must live in models/*.sql.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q5",
+      "question": "What serialization format do Kafka topics use today?",
+      "groundTruth": "Protobuf v3. All new topics are Protobuf; existing Avro topics are being migrated on a rolling basis. Do not introduce new Avro topics.",
+      "type": "supersedes-aware",
+      "correctAnswerAt": "after-supersedes-event"
+    },
+    {
+      "id": "Q6",
+      "question": "What data-quality framework runs on the pipeline today?",
+      "groundTruth": "Soda Core. It replaced Great Expectations because GE's expectation-suite YAML was unmaintainable past ~50 tables (we had 200+), and SodaCL is easier for analysts to write. GE is fully removed.",
+      "type": "supersedes-aware",
+      "correctAnswerAt": "after-supersedes-event"
+    },
+    {
+      "id": "Q7",
+      "question": "Was Kafka always on Protobuf?",
+      "groundTruth": "No. Originally Avro, managed in Confluent Schema Registry. It was superseded by Protobuf due to better codegen across Python/Go/TypeScript and well-known types (Timestamp, Duration) that match our domain. The Avro decision is marked superseded.",
+      "type": "supersedes-aware",
+      "correctAnswerAt": "after-supersedes-event"
+    },
+    {
+      "id": "Q8",
+      "question": "Was data quality always Soda?",
+      "groundTruth": "No. Originally Great Expectations. Superseded by Soda Core; GE is removed from the repo and no new checks should reference it.",
+      "type": "supersedes-aware",
+      "correctAnswerAt": "after-supersedes-event"
+    },
+    {
+      "id": "Q9",
+      "question": "A new engineer suggests adding a new Avro topic for a CDC source. What's the right response?",
+      "groundTruth": "Reject. The active decision is Protobuf for all new topics; Avro is being migrated out. Use Protobuf v3 and register the schema with the Schema Registry in Protobuf mode.",
+      "type": "conflict-resolution",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q10",
+      "question": "A PR proposes writing a new DQ check in Great Expectations because the engineer already knows GE. What should we say?",
+      "groundTruth": "Reject. GE is fully removed; all new DQ checks must be Soda Core (SodaCL), wrapped in Dagster asset checks.",
+      "type": "conflict-resolution",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q11",
+      "question": "A PR wants to partition new S3 Parquet tables by hour for 'finer granularity'. Is that OK?",
+      "groundTruth": "No. Partition by date only (`year=/month=/day=`) — hour-level partitioning creates small-file problems and our latency SLOs don't require it.",
+      "type": "conflict-resolution",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q12",
+      "question": "How are PII columns handled in the warehouse?",
+      "groundTruth": "Tokenized at ingest using deterministic HMAC-SHA256 with a KMS-held key. Analysts query tokens, not cleartext; a reveal service (two-person approval + audit log) exists for compliance/support. Raw PII is never stored in the analytics warehouse.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q13",
+      "question": "Why Airbyte OSS over Fivetran for SaaS connector ingestion?",
+      "groundTruth": "Fivetran is rows-priced and too expensive at our event volume. Airbyte OSS is self-hosted, connectors are pinned to specific versions, and they run on a dedicated k8s node pool so noisy connectors can't starve others.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q14",
+      "question": "I'm writing a new Dagster asset that reads from Postgres CDC. What pieces of the stack does the data flow through?",
+      "groundTruth": "Postgres → Debezium (logical replication) → Kafka (MSK) with Protobuf schema registered in Confluent Schema Registry → Dagster asset on KubernetesExecutor → S3 Parquet (Hive-partitioned) or Snowflake. DQ via Soda asset checks.",
+      "type": "application",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q15",
+      "question": "I'm adding a secret for a new Airbyte connector. Where does it go?",
+      "groundTruth": "AWS Secrets Manager. Pods fetch it via the Secrets Store CSI driver — no secrets in environment variables at rest; no real values in .env (only .env.example with placeholders).",
+      "type": "application",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q16",
+      "question": "A data engineer needs to run a one-off fix to a Glue table definition. Can they `aws glue update-table` from their laptop?",
+      "groundTruth": "No. All AWS infra is Terraform-managed. No `terraform apply` outside of CI. The fix must go through a Terraform PR.",
+      "type": "application",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q17",
+      "question": "What's the rule about Postgres logical replication slots for Debezium?",
+      "groundTruth": "A replication slot that loses its consumer will fill the Postgres WAL disk, so there's a monitoring alarm on replication slot lag > 2GB. Debezium is the CDC tool of record.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q18",
+      "question": "Why Confluent Schema Registry and what compatibility mode?",
+      "groundTruth": "Confluent Schema Registry manages Kafka topic schemas. Compatibility mode is BACKWARD by default; new fields must have defaults so consumers never break. Runs in the same VPC as MSK, no public endpoint.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q19",
+      "question": "A teammate proposes ingesting a new SaaS source via raw JSONL in S3 instead of Parquet. Align with the stack?",
+      "groundTruth": "No. Lakehouse format is Parquet + Snappy, Hive-partitioned. Raw JSONL is 10-100x more expensive to store and breaks downstream Glue/Athena/Snowflake external-table patterns.",
+      "type": "conflict-resolution",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q20",
+      "question": "Why mypy --strict for pipeline code?",
+      "groundTruth": "Silent schema drift between Kafka producers and Dagster consumers caused two prod incidents before we adopted strict typing. Pydantic v2 is used at every external boundary. No `Any` without an inline comment.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    }
+  ]
+}

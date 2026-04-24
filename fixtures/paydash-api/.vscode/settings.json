@@ -1,0 +1,8 @@
+{
+  "continuity.autoLogMode": "off",
+  "continuity.firstRunSeedingEnabled": false,
+  "continuity.showDecisionNotifications": false,
+  "continuity.autoDetectRelationships": false,
+  "continuity.autoLinkToCode": false,
+  "continuity.analytics.enabled": false
+}

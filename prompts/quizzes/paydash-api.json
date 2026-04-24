@@ -1,0 +1,146 @@
+{
+  "project": "paydash-api",
+  "description": "20-question recall quiz for the paydash-api fixture. Mix of direct-recall, supersedes-aware, conflict-resolution, and application types. Supersede pairs under test: cache (in-memory LRU → Upstash Redis) and rate-limit (express-rate-limit in-memory → Upstash Redis sliding window).",
+  "questions": [
+    {
+      "id": "Q1",
+      "question": "Why did paydash pick PostgreSQL over MongoDB?",
+      "groundTruth": "Every entity is strongly relational (customers, payment methods, disputes), and payment intent reservations need SERIALIZABLE isolation. MongoDB cannot give the ACID guarantees we need for payment-adjacent data.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q2",
+      "question": "Why Drizzle ORM instead of Prisma?",
+      "groundTruth": "Drizzle gives raw-SQL escape hatches without a separate query-engine binary, expresses CTEs and window functions that payments queries need, and has structural (not codegen-based) type inference that survives refactors.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q3",
+      "question": "Why Ed25519-signed JWTs instead of server-side sessions?",
+      "groundTruth": "Stateless tokens allow multi-region deployment without shared session storage; Ed25519 keys are smaller and faster than RSA; short-lived access tokens with rotated refresh tokens in httpOnly cookies.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q4",
+      "question": "Why Zod for request and config validation?",
+      "groundTruth": "Zod provides runtime validation AND inferred TypeScript types from one schema — eliminates the type-drift bugs paydash hit with Joi + manual interfaces.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q5",
+      "question": "Why Stripe as the primary payment processor over Adyen or Braintree?",
+      "groundTruth": "Stripe handles PCI compliance, 3DS2, and SCA out of the box. Adyen was too enterprise-heavy for paydash's volume; Braintree had a weaker dispute API.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q6",
+      "question": "What is the current cache for payment method lookups?",
+      "groundTruth": "Upstash Redis with a 5-minute TTL. The original in-process LRU was replaced after the multi-region rollout because each region had its own LRU and cache hit rate fell to ~50%.",
+      "type": "supersedes-aware",
+      "correctAnswerAt": "after-supersedes-event"
+    },
+    {
+      "id": "Q7",
+      "question": "How is the paydash public API rate-limited today?",
+      "groundTruth": "Rate limiting runs on Upstash Redis via @upstash/ratelimit with a sliding-window algorithm (100/min public, 1000/min authenticated). The earlier in-memory express-rate-limit store was replaced because per-process counters gave attackers 3x the effective quota in multi-region.",
+      "type": "supersedes-aware",
+      "correctAnswerAt": "after-supersedes-event"
+    },
+    {
+      "id": "Q8",
+      "question": "If a new engineer proposes adding `lru-cache` back for in-process payment-method caching, what's the right response?",
+      "groundTruth": "Reject. The in-process LRU was superseded by Upstash Redis because it broke under multi-region. The current decision explicitly says 'do not re-introduce it.'",
+      "type": "conflict-resolution",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q9",
+      "question": "A PR wants to store customer amounts as `DECIMAL(10,2)` for 'accuracy'. What's the call?",
+      "groundTruth": "Reject. Money is stored as BIGINT USD cents with a separate 3-letter currency column — never floats, never decimals-as-string. This is non-negotiable.",
+      "type": "conflict-resolution",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q10",
+      "question": "A teammate wants to add `console.log` to a route handler for quick debugging. Is that OK?",
+      "groundTruth": "No. Console.log is forbidden in application code — every log must go through the Pino `logger` export in `src/logger.ts`.",
+      "type": "conflict-resolution",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q11",
+      "question": "Why BullMQ for background jobs instead of Agenda or pg-boss?",
+      "groundTruth": "Agenda is MongoDB-coupled; pg-boss lacked the priority queues needed for dispute-response SLAs. BullMQ (Redis-backed) provides idempotent jobs with a processed_events table and DLQ after 5 retries.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q12",
+      "question": "Why Vitest over Jest for testing?",
+      "groundTruth": "The codebase is pure ESM and Jest's ESM support is awkward. Vitest was built for ESM, has a workspace config for unit + integration, and faster watch mode. Integration tests hit a real Postgres via testcontainers — never mock the DB.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q13",
+      "question": "I need to add a new feature flag — what's the correct system and naming convention?",
+      "groundTruth": "Use GrowthBook (self-hosted), evaluate server-side only (never ship flag values to the browser), prefix the flag name with `pd_`, and document a kill switch in the PR that introduces it.",
+      "type": "application",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q14",
+      "question": "A new webhook endpoint for PayPal is being added. What must I remember about how Stripe's webhook route is configured, and why?",
+      "groundTruth": "The `/webhooks/stripe` route uses `express.raw({ type: 'application/json' })` — the raw body MUST be preserved for `stripe.webhooks.constructEvent` signature verification. The global `express.json()` would otherwise consume the stream. Apply the same pattern to any new webhook route.",
+      "type": "application",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q15",
+      "question": "Where should I add distributed tracing spans, and what should the span name be?",
+      "groundTruth": "Use OpenTelemetry — every HTTP handler gets a root span named after the route template (NOT the URL, to avoid cardinality blow-up). Traces export to Honeycomb via OTLP.",
+      "type": "application",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q16",
+      "question": "Which error-tracking vendor does paydash use, and why was it chosen?",
+      "groundTruth": "Sentry. Rollbar was rejected for worse source-map support; Bugsnag was rejected as expensive at paydash's error volume. PII is scrubbed client-side via `beforeSend`.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q17",
+      "question": "Was payment-method caching ever in-process? What does the history look like today?",
+      "groundTruth": "Yes, it was in-process LRU originally (paydash-cache-inmemory, March 2026), then superseded by Upstash Redis (paydash-cache-redis-upstash) after multi-region deploy exposed hit-rate problems. The in-memory decision is marked superseded; the Redis decision is active.",
+      "type": "supersedes-aware",
+      "correctAnswerAt": "after-supersedes-event"
+    },
+    {
+      "id": "Q18",
+      "question": "Was rate-limiting always Upstash-based?",
+      "groundTruth": "No. Originally it was `express-rate-limit` in-memory. It was replaced by `@upstash/ratelimit` (sliding window) after multi-region made the per-process counters ineffective. The current active decision is the Upstash one.",
+      "type": "supersedes-aware",
+      "correctAnswerAt": "after-supersedes-event"
+    },
+    {
+      "id": "Q19",
+      "question": "Why Fly.io over Railway or Render for deployment?",
+      "groundTruth": "Fly Postgres runs in the same region as the app (sub-ms latency); multi-region is first-class (US + EU for SLA); per-app IPv6 simplifies mTLS. Railway's multi-region was beta; Render's managed Postgres is single-region.",
+      "type": "direct-recall",
+      "correctAnswerAt": null
+    },
+    {
+      "id": "Q20",
+      "question": "A new engineer suggests we do a light 'generic feature-flag gate on the frontend' to A/B-test a UI change. Does that align with paydash's rules?",
+      "groundTruth": "No. GrowthBook flags are evaluated server-side only; flag values must never be shipped to the browser (competitor-scraping risk). If a UI variant is needed, resolve the flag server-side and render both variants' response from the API.",
+      "type": "application",
+      "correctAnswerAt": null
+    }
+  ]
+}
