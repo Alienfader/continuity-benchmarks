@@ -6,3 +6,7 @@ dist/
 !.env.example
 *.log
 .DS_Store
+
+# Continuity
+SESSION_HANDOFF.md
+.continuity/
