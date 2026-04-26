@@ -1,7 +1,7 @@
 
-# Continuity
+# Continuity runtime artifacts only — the seeded fictional decisions in
+# .continuity/decisions.json ARE the fixture and MUST be tracked.
 SESSION_HANDOFF.md
-.continuity/
 
 # Auto-regenerated AI instruction files — the Continuity extension rewrites these
 # in any workspace it activates against, including this fixture. setup-mcp.sh

@@ -1,0 +1,27 @@
+{
+  "bootstrap": {
+    "startupSummary": "paydash-api · 7 decisions · active branch feature/stripe-idempotency · 2 blockers",
+    "generatedAt": "2026-04-19T22:14:00Z"
+  },
+  "resumeSnapshot": {
+    "lastTask": "Add idempotency keys to Stripe webhook handler",
+    "lastCompletedMilestone": "Migrated accounts.balance from NUMERIC to BIGINT cents",
+    "nextExpectedStep": "Resolve refund-test flakiness — Stripe webhook ordering is non-deterministic in CI",
+    "relevantFiles": [
+      "src/routes/webhooks/stripe.ts",
+      "src/db/schema/accounts.ts",
+      "tests/integration/refund.test.ts"
+    ]
+  },
+  "sessionContext": {
+    "goals": [
+      "Add idempotency keys to Stripe webhook handler",
+      "Migrate accounts.balance to BIGINT cents",
+      "Finish payment_attempts audit-table migration",
+      "Integration tests for refund flow"
+    ],
+    "blockers": [
+      "Refund tests fail intermittently in CI — Stripe test-mode webhooks arrive out of order ~5% of the time. Need deterministic replay fixture."
+    ]
+  }
+}

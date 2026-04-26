@@ -1,0 +1,158 @@
+[
+  {
+    "id": "paydash-db-postgres",
+    "question": "Why PostgreSQL for the primary datastore?",
+    "answer": "PostgreSQL is the primary datastore for paydash. Chosen over MySQL because we need SERIALIZABLE isolation for payment intent reservations (prevents double-charge on retries), and over MongoDB because every entity is strongly relational (customers, payment methods, disputes). The team also has years of Postgres operational experience. Non-negotiable: never use another database for payment-adjacent data.",
+    "timestamp": "2026-01-14T10:12:00Z",
+    "tags": ["architecture", "database", "postgres"],
+    "status": "active"
+  },
+  {
+    "id": "paydash-orm-drizzle",
+    "question": "Why Drizzle ORM instead of Prisma?",
+    "answer": "We use Drizzle over Prisma because (1) Drizzle gives us raw-SQL escape hatches without generating a separate query engine binary, (2) payments queries frequently need CTEs and window functions that Prisma's query builder doesn't express cleanly, and (3) Drizzle's type inference is structural rather than codegen-based, which survives refactors better. Prisma is fine for CRUD-heavy apps — not ours.",
+    "timestamp": "2026-01-18T14:40:00Z",
+    "tags": ["architecture", "orm", "drizzle"],
+    "status": "active"
+  },
+  {
+    "id": "paydash-auth-jwt-ed25519",
+    "question": "Why Ed25519-signed JWTs over server-side sessions?",
+    "answer": "Authentication uses Ed25519-signed JWTs verified via `jose`. Stateless tokens let us run multiple regions without shared session storage, and Ed25519 keys are smaller and faster than RSA. Tokens are short-lived (15 min) with refresh tokens rotated in httpOnly cookies. Sessions were rejected because we would need shared Redis across regions, which adds a failure mode for auth.",
+    "timestamp": "2026-02-02T09:20:00Z",
+    "tags": ["architecture", "auth", "jwt", "security"],
+    "status": "active"
+  },
+  {
+    "id": "paydash-validation-zod",
+    "question": "Why Zod for request and config validation?",
+    "answer": "All boundary input (HTTP request bodies, environment variables, webhook payloads) is validated with Zod. Zod gives us runtime validation AND inferred TypeScript types from the same schema, eliminating the type-drift bugs we hit earlier with Joi + manual interfaces. Every route's body parser uses `Schema.safeParse` and returns `400` with `parsed.error.flatten()` on failure — no ad-hoc validation allowed.",
+    "timestamp": "2026-02-09T11:05:00Z",
+    "tags": ["architecture", "validation", "zod"],
+    "status": "active"
+  },
+  {
+    "id": "paydash-logger-pino",
+    "question": "Why Pino instead of Winston for logging?",
+    "answer": "Pino is our logger. Structured JSON output, ~5x faster than Winston in our benchmarks, and pino-http gives us request-scoped child loggers automatically. Console.log is forbidden in application code — every log must go through the `logger` export from `src/logger.ts`. Winston was rejected because its performance cost was measurable on our payment throughput target (>2k RPS per region).",
+    "timestamp": "2026-02-14T16:30:00Z",
+    "tags": ["architecture", "logging", "pino"],
+    "status": "active"
+  },
+  {
+    "id": "paydash-stripe-primary",
+    "question": "Why Stripe as the primary payment processor?",
+    "answer": "Stripe is the primary payment processor. Chosen over Adyen (too enterprise-heavy for our volume) and Braintree (weaker dispute API). Stripe handles PCI compliance, 3DS2, and SCA out of the box. We use Payment Intents (not Charges) for all new transactions — Charges API is considered legacy. Never store full card numbers; always pass `customerId` and `paymentMethodId` references.",
+    "timestamp": "2026-02-21T13:15:00Z",
+    "tags": ["architecture", "payments", "stripe", "compliance"],
+    "status": "active"
+  },
+  {
+    "id": "paydash-deploy-flyio",
+    "question": "Why deploy to Fly.io instead of Railway or Render?",
+    "answer": "Fly.io is our deployment target. Key reasons: (1) Fly Postgres runs in the same region as the app with sub-ms latency, (2) multi-region deployment is first-class and we need US + EU presence for latency SLAs, (3) per-app IPv6 networking simplifies mTLS between services. Railway was rejected because multi-region is still beta; Render was rejected because its managed Postgres is single-region only.",
+    "timestamp": "2026-03-04T10:55:00Z",
+    "tags": ["architecture", "deployment", "fly.io", "infrastructure"],
+    "status": "active"
+  },
+  {
+    "id": "paydash-cache-inmemory",
+    "question": "How do we cache payment method lookups?",
+    "answer": "Payment method lookups are cached in-process with an LRU of 10k entries and a 60-second TTL via `lru-cache`. The dataset fits comfortably per node and the hit rate is >90% for the repeat-customer pattern we see. Redis was rejected at this stage because we were single-region and didn't want another moving part.",
+    "timestamp": "2026-03-08T09:45:00Z",
+    "tags": ["architecture", "caching", "performance"],
+    "status": "superseded",
+    "supersededBy": "paydash-cache-redis-upstash"
+  },
+  {
+    "id": "paydash-queue-bullmq",
+    "question": "Why BullMQ for background jobs?",
+    "answer": "Background jobs (webhook fan-out, receipt emails, nightly reconciliation) run on BullMQ backed by Redis. BullMQ was chosen over Agenda (MongoDB-coupled) and pg-boss (good but lacks priority queues we needed for dispute-response SLAs). Jobs are idempotent — every handler checks a `processed_events` table before doing work. Dead-letter queue after 5 retries with exponential backoff.",
+    "timestamp": "2026-03-11T15:20:00Z",
+    "tags": ["architecture", "jobs", "bullmq", "redis"],
+    "status": "active"
+  },
+  {
+    "id": "paydash-testing-vitest",
+    "question": "Why Vitest over Jest?",
+    "answer": "All tests run on Vitest. Jest's ESM support is still awkward and our codebase is pure ESM; Vitest was built for it. Vitest's workspace support lets us run unit + integration suites from one config, and its watch mode is noticeably faster. Integration tests hit a real Postgres container via testcontainers — never mock the DB for payment flows.",
+    "timestamp": "2026-03-14T11:30:00Z",
+    "tags": ["architecture", "testing", "vitest"],
+    "status": "active"
+  },
+  {
+    "id": "paydash-feature-flags-growthbook",
+    "question": "Why GrowthBook for feature flags?",
+    "answer": "GrowthBook (self-hosted) is the feature-flag system. Chosen over LaunchDarkly (per-seat cost) and Unleash (weaker experiment analytics). Flags are evaluated server-side only — never ship flag values to the browser because competitors would scrape our rollout plans. All flag names use the prefix `pd_` and must have a kill switch documented in the PR that introduces them.",
+    "timestamp": "2026-03-17T14:00:00Z",
+    "tags": ["architecture", "feature-flags", "growthbook"],
+    "status": "active"
+  },
+  {
+    "id": "paydash-error-sentry",
+    "question": "Why Sentry for error tracking?",
+    "answer": "Sentry is the error-tracking system. Chosen over Rollbar (worse source-map support) and Bugsnag (expensive at our error volume). PII is scrubbed client-side with `beforeSend` — full-card-number regex + email hash. Sentry release tags come from `git rev-parse HEAD` at build time. Sampling is 100% on the backend for now because error rate is low enough.",
+    "timestamp": "2026-03-20T10:10:00Z",
+    "tags": ["architecture", "monitoring", "sentry", "errors"],
+    "status": "active"
+  },
+  {
+    "id": "paydash-webhook-stripe-signature",
+    "question": "How do we verify incoming Stripe webhooks?",
+    "answer": "All Stripe webhooks are verified using `stripe.webhooks.constructEvent` with the raw body and the `stripe-signature` header against the endpoint secret from env. The raw body MUST be preserved — our express setup uses `express.raw({ type: 'application/json' })` on the `/webhooks/stripe` route only, because the global `express.json()` middleware would otherwise consume the stream. Invalid signatures return 400 with no body.",
+    "timestamp": "2026-03-26T08:55:00Z",
+    "tags": ["architecture", "security", "webhooks", "stripe"],
+    "status": "active"
+  },
+  {
+    "id": "paydash-cache-redis-upstash",
+    "question": "Why did we switch payment-method cache to Upstash Redis?",
+    "answer": "Payment method lookups are now cached in Upstash Redis with a 5-minute TTL, replacing the in-process LRU. Driver was multi-region deployment: each region had its own LRU, so cache hit rate dropped to ~50% and we were hammering Postgres with duplicate lookups. Upstash gives us cross-region reads with low read latency and a generous free tier. The old in-memory LRU is removed — do not re-introduce it.",
+    "timestamp": "2026-03-28T17:25:00Z",
+    "tags": ["architecture", "caching", "redis", "upstash"],
+    "status": "active",
+    "supersedes": "paydash-cache-inmemory"
+  },
+  {
+    "id": "paydash-rate-limit-express",
+    "question": "How do we rate-limit the public API?",
+    "answer": "Rate limiting uses `express-rate-limit` with an in-memory store — 100 req/min per IP on public endpoints, 1000/min on authenticated endpoints. Enough for a single-region deploy where every request hits the same process. When we go multi-region this will need to change because each region will have its own counter.",
+    "timestamp": "2026-04-01T12:40:00Z",
+    "tags": ["architecture", "security", "rate-limit"],
+    "status": "superseded",
+    "supersededBy": "paydash-rate-limit-upstash"
+  },
+  {
+    "id": "paydash-ci-github-actions",
+    "question": "Why GitHub Actions for CI instead of CircleCI?",
+    "answer": "CI runs on GitHub Actions. Chosen over CircleCI because (1) we already pay for GitHub Enterprise seats, (2) Actions' marketplace covers every integration we need (Fly deploy, Sentry release, Stripe webhook replay), and (3) reusable workflows let us share the test + lint + typecheck matrix across paydash-api and the admin dashboard repo. Merge-queue is enabled on `main` — no direct pushes.",
+    "timestamp": "2026-04-05T09:15:00Z",
+    "tags": ["architecture", "ci", "github-actions"],
+    "status": "active"
+  },
+  {
+    "id": "paydash-observability-opentelemetry",
+    "question": "Why OpenTelemetry for distributed tracing?",
+    "answer": "OpenTelemetry is the tracing standard. Traces are exported to Honeycomb via OTLP; metrics stay in Prometheus for now. Chose OTel over a vendor-specific agent because we want Honeycomb/Datadog portability — one instrumentation surface, swap exporters if pricing changes. Every HTTP handler gets a root span named after the route template (not the URL, to avoid cardinality blow-up).",
+    "timestamp": "2026-04-08T16:05:00Z",
+    "tags": ["architecture", "observability", "opentelemetry", "honeycomb"],
+    "status": "active"
+  },
+  {
+    "id": "paydash-pricing-usd-cents",
+    "question": "How do we store monetary amounts in the database?",
+    "answer": "All monetary amounts are stored as `BIGINT` in USD cents — never floats, never decimals-as-string. Currency is stored in a separate `currency` column as a 3-letter ISO code. This matches what Stripe's API returns and avoids every floating-point rounding bug we've debugged. Never introduce a `numeric` column for money; never compute prices client-side.",
+    "timestamp": "2026-04-12T13:50:00Z",
+    "tags": ["architecture", "database", "money", "data-model"],
+    "status": "active"
+  },
+  {
+    "id": "paydash-rate-limit-upstash",
+    "question": "How is the public API rate-limited now?",
+    "answer": "Rate limiting now runs on Upstash Redis via `@upstash/ratelimit`, using a sliding-window algorithm. Limits are unchanged (100 req/min public, 1000/min authenticated) but counters are now shared across regions. This replaces the in-memory `express-rate-limit` store, which was per-process and gave attackers 3x the effective quota after the multi-region rollout. Do not re-introduce an in-memory limiter.",
+    "timestamp": "2026-04-15T10:30:00Z",
+    "tags": ["architecture", "security", "rate-limit", "upstash", "redis"],
+    "status": "active",
+    "supersedes": "paydash-rate-limit-express"
+  }
+]

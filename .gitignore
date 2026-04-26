@@ -10,3 +10,10 @@ dist/
 # Continuity
 SESSION_HANDOFF.md
 .continuity/
+# Exception: the fixture's .continuity/ is the seeded fictional dataset and MUST be tracked.
+!fixtures/paydash-api/.continuity/
+!fixtures/paydash-api/.continuity/**
+
+# MCP — local-only, contains $HOME paths
+.mcp.json
+.vscode/mcp.json
