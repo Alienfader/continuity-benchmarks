@@ -27,14 +27,25 @@ npm install
 cp .env.example .env
 # edit .env — add at minimum ANTHROPIC_API_KEY (judge) and OPENAI_API_KEY (agent)
 
-# 1. Smoke test with a mock LLM (no API spend, ~10 seconds):
-npm run test:smoke
+# 1. Smoke tests (no API spend, ~10–15 seconds each — verify install + paths):
+npm run test:smoke              # 3-condition recall-over-time on paydash, mock model
+npm run test:smoke-v2           # 4-condition recall (v2 M2 ablation conditions) on data-pipeline
+npm run test:smoke-alignment    # action-alignment, mock model + mock judge
 
-# 2. Single real-model invocation (~5–10 min, ~$0.10):
-npx ts-node runners/recall-over-time.ts --fixture paydash-api --model gpt-4o-mini --seed 1
+# 2. Single real-model invocation (~5–10 min, ~$0.10 with gpt-4o-mini):
+npm run bench:recall -- --fixture paydash-api --model gpt-4o-mini --seed 1
 
-# 3. Re-validate Sonnet's judge scores against Gemini (~25 min, ~$3):
-python3 runners/re-judge.py
+# 3. Full v2 cross-corpus matrix (~12–14h wall, ~$25–30 at Tier 2 OpenAI):
+npm run bench:matrix-v2
+# resume failed cells (idempotent, skips ones whose JSON already exists):
+npm run bench:matrix-v2-resume
+
+# 4. Re-judge action-alignment outputs with Gemini (cross-validation):
+npm run rejudge:paydash         # n=540 paydash inter-judge
+npm run rejudge:cross-corpus    # n=1,080 v2 cross-corpus inter-judge
+
+# 5. Replicate the v2 analysis (no API spend, ~5 seconds — paired Wilcoxon + Cohen's d):
+npm run analyze:v2
 ```
 
 ---

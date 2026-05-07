@@ -13,18 +13,51 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-// Repo root = 5 levels up from runners/shared/
-// (verification/shared/id-rag-parallel/runners/shared → repo root).
-// Fixtures + quizzes moved from benchmarks/src/id-rag-parallel/ to
-// verification/shared/id-rag-parallel/ during a repo refactor; this resolver
-// follows that move. The legacy paydash fallback path is unchanged.
-const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..', '..');
-const FIXTURES_ROOT = path.resolve(REPO_ROOT, 'verification/shared/id-rag-parallel/fixtures');
-const QUIZZES_ROOT = path.resolve(REPO_ROOT, 'verification/shared/id-rag-parallel/quizzes');
-const LEGACY_PAYDASH_DECISIONS = path.resolve(
-  REPO_ROOT,
-  'demo-projects/peer-review/with-continuity/.continuity/decisions.json',
-);
+// Two supported repo layouts:
+//
+//   (a) continuity-ultimate (this repo): runners/shared/ at
+//         verification/shared/id-rag-parallel/runners/shared/, so 5
+//         levels up to repo root. Fixtures + quizzes live under
+//         verification/shared/id-rag-parallel/.
+//
+//   (b) continuity-benchmarks (public repo): runners/shared/ at the top
+//         level, so 2 levels up to repo root. Fixtures at fixtures/,
+//         quizzes at prompts/quizzes/.
+//
+// The loader checks both layouts in order and uses whichever exists, so
+// the same runner source works in both repos with no path rewriting at
+// staging time.
+const CANDIDATE_LAYOUTS: Array<{ fixtures: string; quizzes: string; legacyPaydash?: string }> = [
+  // (a) continuity-ultimate layout
+  {
+    fixtures: path.resolve(__dirname, '..', '..', '..', '..', '..', 'verification/shared/id-rag-parallel/fixtures'),
+    quizzes: path.resolve(__dirname, '..', '..', '..', '..', '..', 'verification/shared/id-rag-parallel/quizzes'),
+    legacyPaydash: path.resolve(__dirname, '..', '..', '..', '..', '..', 'demo-projects/peer-review/with-continuity/.continuity/decisions.json'),
+  },
+  // (b) continuity-benchmarks public repo layout
+  {
+    fixtures: path.resolve(__dirname, '..', '..', 'fixtures'),
+    quizzes: path.resolve(__dirname, '..', '..', 'prompts/quizzes'),
+  },
+];
+
+function findFixturesRoot(projectName: string): { fixturesRoot: string; legacyPaydash?: string } {
+  for (const layout of CANDIDATE_LAYOUTS) {
+    const candidate = path.join(layout.fixtures, projectName, '.continuity', 'decisions.json');
+    if (fs.existsSync(candidate)) return { fixturesRoot: layout.fixtures, legacyPaydash: layout.legacyPaydash };
+    if (projectName === 'paydash-api' && layout.legacyPaydash && fs.existsSync(layout.legacyPaydash)) {
+      return { fixturesRoot: layout.fixtures, legacyPaydash: layout.legacyPaydash };
+    }
+  }
+  return { fixturesRoot: CANDIDATE_LAYOUTS[0].fixtures, legacyPaydash: CANDIDATE_LAYOUTS[0].legacyPaydash };
+}
+
+function findQuizzesRoot(projectName: string): string {
+  for (const layout of CANDIDATE_LAYOUTS) {
+    if (fs.existsSync(path.join(layout.quizzes, `${projectName}.json`))) return layout.quizzes;
+  }
+  return CANDIDATE_LAYOUTS[0].quizzes;
+}
 
 export interface Decision {
   id: string;
@@ -70,7 +103,8 @@ export interface FixtureProject {
  * to the legacy paydash-api fixture for the name 'paydash-api'.
  */
 export function loadFixture(projectName: string): FixtureProject {
-  const clioPath = path.join(FIXTURES_ROOT, projectName);
+  const { fixturesRoot, legacyPaydash } = findFixturesRoot(projectName);
+  const clioPath = path.join(fixturesRoot, projectName);
   const clioDecisionsPath = path.join(clioPath, '.continuity', 'decisions.json');
 
   if (fs.existsSync(clioDecisionsPath)) {
@@ -83,11 +117,11 @@ export function loadFixture(projectName: string): FixtureProject {
     };
   }
 
-  if (projectName === 'paydash-api' && fs.existsSync(LEGACY_PAYDASH_DECISIONS)) {
-    const decisions = readDecisions(LEGACY_PAYDASH_DECISIONS);
+  if (projectName === 'paydash-api' && legacyPaydash && fs.existsSync(legacyPaydash)) {
+    const decisions = readDecisions(legacyPaydash);
     return {
       name: projectName,
-      rootPath: path.dirname(path.dirname(LEGACY_PAYDASH_DECISIONS)),
+      rootPath: path.dirname(path.dirname(legacyPaydash)),
       decisions,
       source: 'legacy-paydash',
     };
@@ -104,7 +138,7 @@ export function loadFixture(projectName: string): FixtureProject {
  * Clio's branch merges).
  */
 export function loadQuiz(projectName: string, fallbackFixture?: FixtureProject): Quiz {
-  const clioQuizPath = path.join(QUIZZES_ROOT, `${projectName}.json`);
+  const clioQuizPath = path.join(findQuizzesRoot(projectName), `${projectName}.json`);
   if (fs.existsSync(clioQuizPath)) {
     const raw = fs.readFileSync(clioQuizPath, 'utf-8');
     const parsed = JSON.parse(raw) as Quiz;
@@ -152,7 +186,21 @@ function readDecisions(p: string): Decision[] {
   throw new Error(`decisions.json at ${p} is neither an array nor { decisions: [...] }`);
 }
 
-export const REPORTS_DIR = path.resolve(REPO_ROOT, 'benchmarks/reports');
+// Reports dir: continuity-ultimate uses benchmarks/reports/ (5 levels up
+// from runners/shared/), continuity-benchmarks uses reports/ (2 levels up).
+function findReportsDir(): string {
+  const candidates = [
+    path.resolve(__dirname, '..', '..', '..', '..', '..', 'benchmarks/reports'),
+    path.resolve(__dirname, '..', '..', 'reports'),
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  // Default to first candidate if neither exists yet (will be created by ensureReportsDir)
+  return candidates[0];
+}
+
+export const REPORTS_DIR = findReportsDir();
 
 export function ensureReportsDir(): void {
   fs.mkdirSync(REPORTS_DIR, { recursive: true });

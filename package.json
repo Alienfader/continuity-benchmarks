@@ -1,14 +1,22 @@
 {
   "name": "continuity-benchmarks",
-  "version": "1.0.0",
-  "description": "Reproducible benchmarks for structured-knowledge-graph retrieval in long-horizon AI agents",
+  "version": "2.0.0",
+  "description": "Reproducible benchmarks for structured-knowledge-graph retrieval in long-horizon AI agents — v6.4/v7.5 walkback edition with v2 cross-corpus matrix + M2 timing ablation + n=1,620 inter-judge replication",
   "license": "MIT",
   "type": "commonjs",
   "scripts": {
-    "test:smoke": "ts-node runners/recall-over-time.ts --fixture paydash-api --model mock --sessions 1",
-    "bench:recall": "ts-node runners/recall-over-time.ts",
-    "bench:alignment": "ts-node runners/action-alignment.ts",
-    "bench:convergence": "ts-node runners/convergence-time.ts"
+    "test:smoke": "ts-node --transpile-only runners/recall-over-time.ts --fixture paydash-api --model mock --sessions 1",
+    "test:smoke-v2": "ts-node --transpile-only runners/recall-over-time.ts --fixture data-pipeline --model mock --sessions 2 --conditions baseline,continuity-blanket,continuity-perq-frontloaded,continuity-in-loop",
+    "test:smoke-alignment": "ts-node --transpile-only runners/action-alignment.ts --fixture paydash-api --model mock --actions 3",
+    "bench:recall": "ts-node --transpile-only runners/recall-over-time.ts",
+    "bench:alignment": "ts-node --transpile-only runners/action-alignment.ts",
+    "bench:convergence": "ts-node --transpile-only runners/convergence-time.ts",
+    "bench:matrix-v1": "bash scripts/run-id-rag-parity.sh",
+    "bench:matrix-v2": "bash scripts/run-id-rag-parity-v2.sh",
+    "bench:matrix-v2-resume": "bash scripts/run-id-rag-parity-v2-resume.sh",
+    "analyze:v2": "python3 runners/experimental-gaps-analysis-v2.py",
+    "rejudge:paydash": "python3 runners/re-judge.py",
+    "rejudge:cross-corpus": "python3 runners/re-judge-cross-corpus.py"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
@@ -21,6 +29,10 @@
     "@types/node": "^22.13.0",
     "@types/uuid": "^10.0.0",
     "ts-node": "^10.9.2",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
