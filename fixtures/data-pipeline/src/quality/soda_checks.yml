@@ -1,0 +1,12 @@
+checks for analytics.daily_revenue:
+  - row_count >= 1:
+      name: "warehouse has at least one day of revenue"
+  - missing_count(revenue_usd) = 0:
+      name: "revenue never null"
+  - freshness(day) < 36h:
+      name: "daily revenue refreshed within 36h"
+
+checks for raw.stripe_events:
+  - row_count > 0
+  - invalid_count(event_type) = 0:
+      valid values: [charge.succeeded, charge.failed, charge.refunded, dispute.created]

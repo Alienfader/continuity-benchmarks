@@ -35,7 +35,7 @@ import {
   FixtureProject,
   Decision,
 } from './shared/fixtures';
-import { BM25Retriever, Condition, renderContext } from './shared/retrieval';
+import { BM25Retriever, Condition, renderContext, extractEntities } from './shared/retrieval';
 
 interface ActionResult {
   actionId: string;
@@ -344,12 +344,21 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     for (const condition of args.conditions) {
       let contextBlock = '';
       let retrieved: Decision[] = [];
+      let retrievalQuery = '';
       if (condition === 'continuity') {
-        retrieved = retriever.retrieve(prompt, topK);
+        // Passive-RAG analog: BM25 on the full prompt (broad intent-level
+        // retrieval, like the agent typing the prompt into a search box).
+        retrievalQuery = prompt;
+        retrieved = retriever.retrieve(retrievalQuery, topK);
         contextBlock = renderContext(retrieved);
       } else if (condition === 'continuity-in-loop') {
-        // Simulate re-retrieving right before the action, once per turn.
-        retrieved = retriever.retrieve(prompt, topK);
+        // Production middleware analog: BM25 on entities extracted from the
+        // prompt (file paths, technology names, capitalized identifiers) —
+        // mirrors what AutoRetrievalMiddleware does when it sees
+        // `edit_file(path="src/auth.ts")` and pulls decisions linked to
+        // src/auth.ts rather than searching on the user's full intent.
+        retrievalQuery = extractEntities(prompt);
+        retrieved = retriever.retrieve(retrievalQuery, topK);
         contextBlock = renderContext(retrieved);
       }
 

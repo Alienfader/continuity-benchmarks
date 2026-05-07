@@ -1,0 +1,23 @@
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: traefik
+  namespace: ingress-traefik
+spec:
+  chart:
+    spec:
+      chart: traefik
+      version: "33.0.0"
+      sourceRef:
+        kind: HelmRepository
+        name: traefik
+  values:
+    deployment:
+      replicas: 3
+    service:
+      type: LoadBalancer
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    ingressClass:
+      enabled: true
+      isDefaultClass: true

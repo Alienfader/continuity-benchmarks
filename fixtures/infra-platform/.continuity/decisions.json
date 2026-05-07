@@ -1,0 +1,158 @@
+[
+  {
+    "id": "infra-cluster-eks",
+    "question": "Why EKS over GKE for Kubernetes?",
+    "answer": "Clusters run on EKS. Chose over GKE because (1) the rest of the company's infra (RDS, MSK, S3) is on AWS so staying on AWS removes cross-cloud networking cost, (2) IAM-to-Kubernetes mapping via IRSA is a first-class feature we use extensively for pod-scoped AWS access, (3) our support contract with AWS beats what we'd get as a new GCP customer. GKE is technically nicer in isolation; this was a fit decision.",
+    "timestamp": "2025-07-08T10:00:00Z",
+    "tags": ["architecture", "kubernetes", "eks"],
+    "status": "active"
+  },
+  {
+    "id": "infra-mesh-linkerd",
+    "question": "Why Linkerd over Istio for the service mesh?",
+    "answer": "Service mesh is Linkerd. Chose over Istio because (1) Linkerd's resource overhead is ~5x lower per pod (we benchmarked on a 200-pod cluster), (2) Linkerd's config surface is orders of magnitude smaller — we don't need every Istio feature and Istio's complexity was causing misconfigurations, (3) Linkerd's mTLS is on by default with no extra YAML. Istio was considered for its richer traffic-management primitives but Linkerd + Traefik cover our use case.",
+    "timestamp": "2025-07-15T13:30:00Z",
+    "tags": ["architecture", "service-mesh", "linkerd"],
+    "status": "active"
+  },
+  {
+    "id": "infra-ingress-traefik",
+    "question": "Why Traefik over NGINX Ingress?",
+    "answer": "Ingress is Traefik. Chose over ingress-nginx because (1) Traefik's CRDs (IngressRoute, Middleware) model our routing rules more cleanly than NGINX annotations, (2) built-in Let's Encrypt ACME integration, (3) dynamic config reload without pod restarts. NGINX Ingress is fine but every complex rule we had became an annotation soup.",
+    "timestamp": "2025-07-22T09:45:00Z",
+    "tags": ["architecture", "ingress", "traefik"],
+    "status": "active"
+  },
+  {
+    "id": "infra-secrets-vault",
+    "question": "Why HashiCorp Vault over SOPS for secrets?",
+    "answer": "Secrets live in HashiCorp Vault (self-hosted, Raft backend). Chose over SOPS-in-git because (1) Vault's dynamic-secret engines generate short-lived database credentials per pod — SOPS is static-only, (2) audit log of secret access is a compliance requirement we couldn't meet with git history alone, (3) Vault's Kubernetes auth method maps service accounts to policies cleanly. Do not commit plaintext secrets to any repo, SOPS-encrypted or not.",
+    "timestamp": "2025-07-29T14:20:00Z",
+    "tags": ["architecture", "secrets", "vault"],
+    "status": "active"
+  },
+  {
+    "id": "infra-gitops-argocd",
+    "question": "Why ArgoCD over Flux for GitOps?",
+    "answer": "GitOps is ArgoCD. Chose over Flux because (1) the UI is genuinely useful for our platform-customer engineers (non-K8s-expert) who need to see app state, (2) ApplicationSets let us fan out one manifest to N clusters which matches our multi-region setup, (3) ArgoCD's sync waves control infra ordering (CRDs → operators → apps) cleanly. Flux is more 'pure GitOps' but the UX gap was decisive.",
+    "timestamp": "2025-08-05T11:15:00Z",
+    "tags": ["architecture", "gitops", "argocd"],
+    "status": "active"
+  },
+  {
+    "id": "infra-registry-ecr",
+    "question": "Why ECR for container images?",
+    "answer": "Container images live in Amazon ECR. Co-located with EKS, so pulls are VPC-local and don't cross the internet. IAM integration for push/pull means no long-lived credentials. Image scanning (Inspector) is enabled on every repo with a CRITICAL finding threshold blocking promotion. GCR was rejected because we're an AWS shop; Docker Hub was rejected on rate limits.",
+    "timestamp": "2025-08-12T10:50:00Z",
+    "tags": ["architecture", "registry", "ecr"],
+    "status": "active"
+  },
+  {
+    "id": "infra-logs-loki",
+    "question": "What's the log pipeline?",
+    "answer": "Logs go through Promtail → Loki → Grafana. Chose Loki because it's Prometheus-like (label-based, not full-text index) so storage cost is lower than Elasticsearch. Retention is 30 days in S3 via Loki's chunks store. Grafana's Loki datasource gives us one UI for metrics + logs.",
+    "timestamp": "2025-08-19T15:30:00Z",
+    "tags": ["architecture", "observability", "loki"],
+    "status": "superseded",
+    "supersededBy": "infra-logs-vector-elastic"
+  },
+  {
+    "id": "infra-metrics-prom-thanos",
+    "question": "Why Prometheus + Thanos over Mimir?",
+    "answer": "Metrics are Prometheus per cluster with Thanos for global query and long-term storage (S3). Chose over Cortex/Mimir because (1) Thanos's sidecar model is simpler to reason about — Prometheus stays authoritative for recent data, (2) existing Prometheus rules run unchanged. Thanos Ruler evaluates global recording rules. Retention in Prometheus: 14 days local; Thanos: 1 year in S3.",
+    "timestamp": "2025-08-26T13:05:00Z",
+    "tags": ["architecture", "observability", "prometheus", "thanos"],
+    "status": "active"
+  },
+  {
+    "id": "infra-tracing-jaeger",
+    "question": "What's the distributed tracing backend?",
+    "answer": "Distributed tracing runs on Jaeger (elasticsearch storage backend). All services send OpenTelemetry traces to a per-cluster Jaeger collector, which writes to a dedicated ES cluster. Sampling is head-based at 1% on normal traffic, 100% on errors.",
+    "timestamp": "2025-09-02T10:45:00Z",
+    "tags": ["architecture", "observability", "tracing", "jaeger"],
+    "status": "superseded",
+    "supersededBy": "infra-tracing-tempo"
+  },
+  {
+    "id": "infra-dashboards-grafana",
+    "question": "Why Grafana as the dashboard layer?",
+    "answer": "Grafana is the single UI for metrics, logs, and traces. Chose over Kibana (only logs) and Datadog (too expensive once we crossed 500 hosts). Dashboards are managed as JSON-in-git, applied via grafana-operator. No-one can edit dashboards directly in the UI in prod — changes go through a PR.",
+    "timestamp": "2025-09-09T12:30:00Z",
+    "tags": ["architecture", "observability", "grafana"],
+    "status": "active"
+  },
+  {
+    "id": "infra-ci-buildkite",
+    "question": "Why Buildkite over GitHub Actions for CI?",
+    "answer": "Company-wide CI is Buildkite with self-hosted agents on EKS. Chose over GitHub Actions because (1) Actions hosted runners don't support our VPC-only build needs — many builds need to pull from private ECR + internal Artifactory, (2) self-hosted GH runners exist but Buildkite's agent orchestration is better, (3) per-pipeline concurrency controls matter at our scale. Some side repos still use Actions; the main monorepo is Buildkite-only.",
+    "timestamp": "2025-09-16T09:00:00Z",
+    "tags": ["architecture", "ci", "buildkite"],
+    "status": "active"
+  },
+  {
+    "id": "infra-cd-argocd",
+    "question": "What drives continuous deployment?",
+    "answer": "CD is ArgoCD (same tool as GitOps). Buildkite builds + pushes images + updates a manifest-repo PR; ArgoCD syncs the new manifest. Spinnaker was considered for its richer deployment strategies but ArgoCD Rollouts covers blue/green and canary well enough, and unifying CD + GitOps on one tool is worth a feature tradeoff.",
+    "timestamp": "2025-09-23T14:10:00Z",
+    "tags": ["architecture", "cd", "argocd"],
+    "status": "active"
+  },
+  {
+    "id": "infra-registry-pkgs-artifactory",
+    "question": "Where do internal language packages live?",
+    "answer": "Internal npm, pypi, and Maven artifacts live in JFrog Artifactory. Separate from container images (which are in ECR). Chose Artifactory over GitHub Packages because multi-repo-type support in one server is cleaner than one package registry per language, and we already had an Artifactory contract.",
+    "timestamp": "2025-09-30T10:55:00Z",
+    "tags": ["architecture", "registry", "artifactory"],
+    "status": "active"
+  },
+  {
+    "id": "infra-policy-opa",
+    "question": "Why OPA Gatekeeper for admission policies?",
+    "answer": "Admission policy is OPA Gatekeeper. Chose over Kyverno (newer, we had Rego experience) and plain admission webhooks (too easy to mis-write). Core constraints: require resource limits, require signed images via Cosign, block `privileged: true`, enforce namespace labels for cost attribution. Constraint violations fail on the default deny path.",
+    "timestamp": "2025-10-07T15:40:00Z",
+    "tags": ["architecture", "policy", "opa"],
+    "status": "active"
+  },
+  {
+    "id": "infra-cost-kubecost",
+    "question": "How do we attribute Kubernetes cost back to teams?",
+    "answer": "Cost attribution is Kubecost. Chose over self-built Prometheus dashboards (doable but a lot of Grafana maintenance) and OpenCost standalone (fewer integrations). Namespaces carry a `team=` label that Kubecost rolls up into monthly reports. Per-team showback, not chargeback — yet.",
+    "timestamp": "2025-10-14T11:25:00Z",
+    "tags": ["architecture", "cost", "kubecost"],
+    "status": "active"
+  },
+  {
+    "id": "infra-logs-vector-elastic",
+    "question": "Why did we move logs from Loki to Vector + Elasticsearch?",
+    "answer": "Log pipeline now uses Vector (collection + transform) into Elasticsearch (storage + search), replacing Promtail + Loki. Drivers: (1) Loki's label-based query model did not serve our incident-response use cases — free-text search of log bodies was slow and LogQL patterns were awkward, (2) Vector's transform DSL gave us consistent log enrichment (trace-id, tenant-id) at the collector tier, (3) Elasticsearch is already operated by the security team for their SIEM, so combining infra + security logs removed a duplicate cluster. Loki is fully decommissioned; do not stand up new Loki instances.",
+    "timestamp": "2025-11-04T09:20:00Z",
+    "tags": ["architecture", "observability", "logs", "elastic"],
+    "status": "active",
+    "supersedes": "infra-logs-loki"
+  },
+  {
+    "id": "infra-autoscaling-keda",
+    "question": "Why KEDA for autoscaling?",
+    "answer": "Autoscaling is KEDA (Kubernetes Event-Driven Autoscaling). Chose over plain HPA because HPA can only scale on CPU/memory or custom metrics via a metrics adapter — KEDA ships scalers for SQS, Kafka, Prometheus queries, etc., and handles scale-to-zero for idle workloads. Scalers are defined per-service in their ArgoCD app.",
+    "timestamp": "2025-11-18T13:50:00Z",
+    "tags": ["architecture", "autoscaling", "keda"],
+    "status": "active"
+  },
+  {
+    "id": "infra-backup-velero",
+    "question": "Why Velero for cluster backups?",
+    "answer": "Velero backs up cluster state (namespaced resources, PV snapshots) to S3 on a nightly schedule. Chose over Kasten K10 (heavier install, licensing) and rolling our own (no). Restore drills are run quarterly — a restore that hasn't been tested in 90 days is assumed broken. Critical namespaces (argocd, vault, gatekeeper-system) have hourly snapshots.",
+    "timestamp": "2025-12-02T10:15:00Z",
+    "tags": ["architecture", "backup", "velero"],
+    "status": "active"
+  },
+  {
+    "id": "infra-tracing-tempo",
+    "question": "Why did we move from Jaeger to Grafana Tempo?",
+    "answer": "Distributed tracing now runs on Grafana Tempo, replacing Jaeger. Drivers: (1) Tempo's object-storage backend (S3) cut our trace-storage cost by ~4x vs Jaeger's Elasticsearch-backed setup, (2) Tempo integrates natively with Grafana so metrics→traces drill-down is a single click — we were swivel-chairing between Grafana and Jaeger UI, (3) TraceQL is easier for on-call engineers than Jaeger's search UI. Jaeger collectors are decommissioned; all OpenTelemetry exporters now target Tempo.",
+    "timestamp": "2026-01-13T14:35:00Z",
+    "tags": ["architecture", "observability", "tracing", "tempo"],
+    "status": "active",
+    "supersedes": "infra-tracing-jaeger"
+  }
+]

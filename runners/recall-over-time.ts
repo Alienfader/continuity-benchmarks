@@ -8,10 +8,28 @@
  * all Q quiz questions and score each answer against ground truth with
  * cosine similarity over all-mpnet-base-v2 embeddings.
  *
- * Conditions:
- *   - baseline                  : no project context in the prompt
- *   - continuity                : top-K retrieved decisions prepended to the prompt, once
- *   - continuity-in-loop        : same retrieval + re-fires each session
+ * Conditions (this runner uses the 4-condition expanded matrix; see
+ * shared/retrieval.ts for the canonical definitions):
+ *
+ *   - baseline                       no project context
+ *   - continuity-blanket             retrieval keyed on the concatenation of
+ *                                    all 20 question stems (project-level
+ *                                    seed); same context every session
+ *   - continuity-perq-frontloaded    M2 ablation: per-question retrieval
+ *                                    computed ONCE at session 1, the same
+ *                                    20 question-specific blobs re-injected
+ *                                    every session boundary
+ *   - continuity-in-loop             per-question retrieval done FRESH at
+ *                                    every session boundary (re-fires under
+ *                                    noise drift)
+ *   - continuity                     legacy alias for continuity-blanket;
+ *                                    accepted on input for backwards compat
+ *                                    with the v6.3 runs
+ *
+ * Pairwise contrasts a reviewer can read from this run:
+ *   - baseline → blanket           : effect of any retrieval
+ *   - blanket → perq-frontloaded   : effect of better keying (timing held)
+ *   - perq-frontloaded → in-loop   : effect of fresh re-retrieval (timing only)
  *
  * Outputs:
  *   - benchmarks/reports/recall-over-time.json  (machine-parseable)
@@ -156,13 +174,35 @@ async function runCondition(args: {
   const perQuestion: PerQuestionRecord[] = [];
   const sessionSummaries: Array<{ sessionIdx: number; summary: RecallSummary }> = [];
 
-  // For the "continuity" (non-in-loop) condition: retrieve ONCE up front using
-  // the project description (concatenated question stems) as the seed query.
-  // For "continuity-in-loop": re-retrieve per question each session.
-  // For "baseline": no retrieval.
+  // Set up retrieval state per condition. See shared/retrieval.ts for the
+  // canonical definitions of each condition.
+  //
+  // - baseline                    : no retrieval
+  // - continuity-blanket          : single retrieval on concatenated quiz
+  //                                 stems; same blob every session/question
+  // - continuity-perq-frontloaded : per-question retrievals computed ONCE at
+  //                                 the start; the same 20 blobs are
+  //                                 re-injected unchanged every session
+  // - continuity-in-loop          : per-question retrieval computed FRESH at
+  //                                 every session boundary
+  // - continuity                  : legacy alias → continuity-blanket
+  const isBlanket = condition === 'continuity-blanket' || condition === 'continuity';
+  const isPerQFrontloaded = condition === 'continuity-perq-frontloaded';
+  const isInLoop = condition === 'continuity-in-loop';
+
   const upfrontSeed = quiz.questions.map((q) => q.question).join(' ');
-  const upfrontDecisions = condition !== 'baseline' ? retriever.retrieve(upfrontSeed, topK) : [];
-  const upfrontContext = condition === 'continuity' ? renderContext(upfrontDecisions) : '';
+  const blanketContext = isBlanket
+    ? renderContext(retriever.retrieve(upfrontSeed, topK))
+    : '';
+
+  // Per-question retrievals computed once at session 1 and frozen for the
+  // whole run — the M2 ablation comparand to in-loop's fresh-retrieval.
+  const frontloadedPerQ: Map<string, string> = new Map();
+  if (isPerQFrontloaded) {
+    for (const q of quiz.questions) {
+      frontloadedPerQ.set(q.id, renderContext(retriever.retrieve(q.question, topK)));
+    }
+  }
 
   for (let s = 0; s < sessions; s++) {
     if (s > 0) {
@@ -177,8 +217,10 @@ async function runCondition(args: {
 
     const scores: number[] = [];
     for (const q of quiz.questions) {
-      let contextBlock = upfrontContext;
-      if (condition === 'continuity-in-loop') {
+      let contextBlock = blanketContext;
+      if (isPerQFrontloaded) {
+        contextBlock = frontloadedPerQ.get(q.id) ?? '';
+      } else if (isInLoop) {
         const top = retriever.retrieve(q.question, topK);
         contextBlock = renderContext(top);
       }

@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: train-
+spec:
+  entrypoint: train
+  templates:
+    - name: train
+      container:
+        image: gcr.io/mlp/trainer:{{workflow.parameters.image-tag}}
+        command: [python, -m, platform.train]
+        resources:
+          requests:
+            nvidia.com/gpu: 1
+          limits:
+            nvidia.com/gpu: 1
+        env:
+          - name: MLFLOW_TRACKING_URI
+            value: http://mlflow.ml-platform.svc.cluster.local:5000
+      nodeSelector:
+        cloud.google.com/gke-accelerator: nvidia-tesla-a100

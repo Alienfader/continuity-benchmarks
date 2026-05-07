@@ -1,0 +1,150 @@
+[
+  {
+    "id": "mlp-orchestrator-argo",
+    "question": "Why Argo Workflows for training orchestration?",
+    "answer": "Argo Workflows is the training orchestrator. Chose over Kubeflow Pipelines (too opinionated — pulled in a Kubeflow install we didn't need) and Metaflow (AWS-assumed, we run on GKE). Argo is just a Kubernetes CRD, so we get the same RBAC + node-pool scheduling as the rest of our infra. Every training run is a Workflow object we can re-run by name.",
+    "timestamp": "2025-08-05T09:00:00Z",
+    "tags": ["architecture", "orchestration", "argo"],
+    "status": "active"
+  },
+  {
+    "id": "mlp-experiment-mlflow",
+    "question": "Why MLflow over W&B for experiment tracking?",
+    "answer": "Experiment tracking runs on self-hosted MLflow. Chose over Weights & Biases (excellent UX but sends run metadata to W&B servers — our customer data compliance team blocks that) and Neptune.ai (smaller community). MLflow's artifact store points at GCS; metadata DB is Cloud SQL (Postgres). Every training run is required to log `lora_r`, `lora_alpha`, `eval_loss`, and `rouge_l` to MLflow for comparability.",
+    "timestamp": "2025-08-12T13:30:00Z",
+    "tags": ["architecture", "experiments", "mlflow"],
+    "status": "active"
+  },
+  {
+    "id": "mlp-feature-store-feast",
+    "question": "Why Feast for the feature store?",
+    "answer": "Feature store is Feast (OSS). Chose over Tecton (too expensive for our feature-row volume) and rolling our own (maintenance burden). Online store is Redis on GKE; offline store is BigQuery. Feature-view definitions live in `features/*.py` and get applied via `feast apply` in CI. Never read features directly from BigQuery at inference time — always through Feast's online store.",
+    "timestamp": "2025-08-19T11:20:00Z",
+    "tags": ["architecture", "feature-store", "feast"],
+    "status": "active"
+  },
+  {
+    "id": "mlp-training-gke",
+    "question": "Why Kubernetes-on-GKE for training infra?",
+    "answer": "Training runs on GKE (Google Kubernetes Engine). Chose GCP over AWS primarily because GCP's A100 availability in `us-central1` was consistent while EC2 P4 instances had 6-week waits during our ramp. GKE Autopilot was rejected because we need fine-grained control over GPU node pools. Spot VMs are used for short training jobs (<1h), on-demand for long runs to avoid preemption.",
+    "timestamp": "2025-08-26T15:10:00Z",
+    "tags": ["architecture", "kubernetes", "gke"],
+    "status": "active"
+  },
+  {
+    "id": "mlp-gpu-a100",
+    "question": "Why A100 GPUs over H100?",
+    "answer": "Training uses NVIDIA A100 80GB. H100s would be faster per step but (1) availability was poor when we signed the reserved-capacity contract, (2) H100 list price was ~2.5x the A100 and we did not yet need the step-time improvement, (3) our dominant workload is LoRA fine-tuning (parameter-efficient) where the A100's memory is rarely the bottleneck. Revisit when our pretraining-from-scratch workload grows.",
+    "timestamp": "2025-09-02T10:45:00Z",
+    "tags": ["architecture", "hardware", "gpu"],
+    "status": "active"
+  },
+  {
+    "id": "mlp-framework-pytorch",
+    "question": "Why PyTorch over JAX?",
+    "answer": "Training framework is PyTorch 2.4 with `torch.compile`. JAX is faster for some workloads but (1) our team's PyTorch muscle memory is deeper, (2) the Hugging Face ecosystem (Transformers, PEFT, TRL) is PyTorch-native, (3) `torch.compile` closed most of the gap on our benchmarks. No TensorFlow anywhere in the stack.",
+    "timestamp": "2025-09-09T09:55:00Z",
+    "tags": ["architecture", "framework", "pytorch"],
+    "status": "active"
+  },
+  {
+    "id": "mlp-model-registry-mlflow",
+    "question": "What's the model registry?",
+    "answer": "Model registry is MLflow's built-in registry (not a separate tool). Every model version has `Staging`, `Production`, `Archived` stages. Promotion to `Production` is gated on (1) eval metrics within 5% of previous prod, (2) a manual approve in the registry UI, (3) a shadow canary run for 24h before full cutover. Do not serve models that aren't in the registry.",
+    "timestamp": "2025-09-16T14:20:00Z",
+    "tags": ["architecture", "model-registry", "mlflow"],
+    "status": "active"
+  },
+  {
+    "id": "mlp-serving-vllm",
+    "question": "What serves our LLM inference?",
+    "answer": "Inference runs on vLLM (v0.4.x). Chose over plain Hugging Face Transformers (no paged-attention, no continuous batching) and Triton (heavier to operate). vLLM's PagedAttention gives us 3-5x throughput over naive batching on our A100s. OpenAI-compatible API makes client integration trivial.",
+    "timestamp": "2025-09-23T12:00:00Z",
+    "tags": ["architecture", "serving", "vllm"],
+    "status": "superseded",
+    "supersededBy": "mlp-serving-tgi"
+  },
+  {
+    "id": "mlp-vector-pgvector",
+    "question": "Where do we store embeddings for RAG?",
+    "answer": "Embeddings for retrieval-augmented generation are stored in pgvector (Postgres extension) on Cloud SQL. Chose over standalone vector DBs because we already operate Postgres and the dataset fits in a single instance (~2M vectors, 1536 dim). HNSW index; `lists = sqrt(rows)` heuristic. Query plans are pinned to use the index.",
+    "timestamp": "2025-09-30T16:35:00Z",
+    "tags": ["architecture", "vector-db", "pgvector"],
+    "status": "superseded",
+    "supersededBy": "mlp-vector-qdrant"
+  },
+  {
+    "id": "mlp-data-format-parquet",
+    "question": "What format do we use for training data?",
+    "answer": "Training datasets are Parquet on GCS, loaded via the `webdataset` library for streaming. Chose over TFRecord (TensorFlow-centric) and raw JSONL (10x larger, slower). Parquet's columnar layout matches our feature-subset selection patterns. Datasets are versioned by content hash — never mutate in place.",
+    "timestamp": "2025-10-07T10:30:00Z",
+    "tags": ["architecture", "data", "parquet"],
+    "status": "active"
+  },
+  {
+    "id": "mlp-labeling-label-studio",
+    "question": "Why Label Studio for data labeling?",
+    "answer": "Label Studio (self-hosted) is the labeling tool. Chose over Scale AI (cost + external vendor risk for some data) and Prodigy (smaller team collaboration story). Projects are defined as XML templates checked into the data repo. Labeler agreement scores (Fleiss' kappa) are logged on every labeled batch — below 0.6 triggers a re-labeling cycle.",
+    "timestamp": "2025-10-14T14:15:00Z",
+    "tags": ["architecture", "labeling", "label-studio"],
+    "status": "active"
+  },
+  {
+    "id": "mlp-monitoring-evidently",
+    "question": "Why Evidently for drift + quality monitoring?",
+    "answer": "Model monitoring (data drift, prediction drift, feature distribution shift) runs on Evidently AI. Chose over WhyLabs (SaaS) and Arize (expensive at our prediction volume). Evidently reports are generated nightly via Argo Workflow and published to a Grafana iframe. Drift alerts feed into PagerDuty on a 2-hour deduplication window.",
+    "timestamp": "2025-10-21T11:50:00Z",
+    "tags": ["architecture", "monitoring", "evidently"],
+    "status": "active"
+  },
+  {
+    "id": "mlp-ci-gh-gpu",
+    "question": "Why GitHub Actions with self-hosted GPU runners?",
+    "answer": "CI for training-code changes runs on GitHub Actions with self-hosted GPU runners (A10s — not A100s, for cost) in a dedicated GKE node pool. Chose over hosted GPU CI services because runner-minute pricing on those exceeded the steady-state cost of our own pool. Runners auto-scale 0-to-N via Actions Runner Controller.",
+    "timestamp": "2025-10-28T13:25:00Z",
+    "tags": ["architecture", "ci", "github-actions", "gpu"],
+    "status": "active"
+  },
+  {
+    "id": "mlp-serving-tgi",
+    "question": "Why did we move from vLLM to Hugging Face TGI?",
+    "answer": "Inference now runs on Hugging Face TGI (text-generation-inference), replacing vLLM. Drivers: (1) TGI's LoRA-adapter-per-request support matched our multi-tenant routing requirement — we serve a different LoRA per customer and vLLM's multi-LoRA support was still experimental, (2) TGI's streaming + token-level-logprobs API is what our product uses, (3) quantization story (GPTQ, AWQ) was more stable in TGI at the time. vLLM was an excellent baseline but the tenant-per-LoRA requirement was decisive.",
+    "timestamp": "2025-11-11T09:40:00Z",
+    "tags": ["architecture", "serving", "tgi"],
+    "status": "active",
+    "supersedes": "mlp-serving-vllm"
+  },
+  {
+    "id": "mlp-privacy-opacus",
+    "question": "How do we enforce differential privacy during training?",
+    "answer": "When training on customer data tagged `pii_present=true`, we use Opacus (DP-SGD) with epsilon budget tracked per customer. Chose over TensorFlow Privacy (we're PyTorch) and rolling our own DP accounting (don't). Budget is enforced at job-submit time — if a customer's remaining epsilon < required, the training job refuses to start. Never train on PII-tagged data without DP enabled.",
+    "timestamp": "2025-11-25T16:05:00Z",
+    "tags": ["architecture", "privacy", "opacus"],
+    "status": "active"
+  },
+  {
+    "id": "mlp-quantization-awq",
+    "question": "What quantization scheme do we use for serving?",
+    "answer": "Production serving uses AWQ (Activation-aware Weight Quantization) int4 where supported. Chose over GPTQ (slightly lower quality in our A/B) and bitsandbytes int8 (worse throughput on A100). Quality regression is measured on a 2k-prompt eval set before a quantized model is promoted. Do not serve an un-quantized model in production — it's too expensive.",
+    "timestamp": "2025-12-09T10:20:00Z",
+    "tags": ["architecture", "quantization", "awq"],
+    "status": "active"
+  },
+  {
+    "id": "mlp-finetune-lora",
+    "question": "Why LoRA adapters over full fine-tuning?",
+    "answer": "Customer-specific fine-tunes are LoRA adapters (PEFT library), not full fine-tunes. Drivers: (1) adapters are ~100MB vs tens of GB for full models — cheap to store per tenant, (2) TGI can hot-swap adapters per request, (3) LoRA training converges in hours on a single A100 vs days for full fine-tuning. Full fine-tuning is reserved for the base model, which we do rarely.",
+    "timestamp": "2025-12-23T14:50:00Z",
+    "tags": ["architecture", "fine-tuning", "lora"],
+    "status": "active"
+  },
+  {
+    "id": "mlp-vector-qdrant",
+    "question": "Why did we move embeddings from pgvector to Qdrant?",
+    "answer": "Embeddings now live in Qdrant (self-hosted cluster on GKE), replacing pgvector. Drivers: (1) we crossed 20M vectors and pgvector query latency at HNSW `ef_search` high enough for our recall target was 200-400ms — Qdrant is sub-50ms at the same recall, (2) Qdrant's payload filtering by tenant scales linearly with shards where pgvector needed ANALYZE-sensitive plan tuning, (3) horizontal scaling is first-class in Qdrant and painful to add to pgvector. Postgres remains the source-of-truth for the text chunks; Qdrant stores vectors + payload pointers.",
+    "timestamp": "2026-01-20T12:30:00Z",
+    "tags": ["architecture", "vector-db", "qdrant"],
+    "status": "active",
+    "supersedes": "mlp-vector-pgvector"
+  }
+]

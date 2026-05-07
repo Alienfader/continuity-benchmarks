@@ -1,0 +1,13 @@
+appId: com.habitus.app
+---
+- launchApp
+- tapOn: "Sign in"
+- inputText: "demo@habitus.app"
+- tapOn: "Continue"
+- inputText: "hunter2"
+- tapOn: "Sign in"
+- assertVisible: "Today"
+- tapOn:
+    id: "habit-row-morning-run"
+- tapOn: "Mark done"
+- assertVisible: "Streak: 5 days"

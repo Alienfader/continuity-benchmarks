@@ -13,15 +13,17 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-// Public-repo layout: runners/shared/ is 2 levels down from repo root.
-const REPO_ROOT = path.resolve(__dirname, '..', '..');
-const FIXTURES_ROOT = path.resolve(REPO_ROOT, 'fixtures');
-const QUIZZES_ROOT = path.resolve(REPO_ROOT, 'prompts', 'quizzes');
-// paydash-api lives at fixtures/paydash-api/ in this repo; the "legacy" branch
-// is no longer needed but kept as a no-op fallback.
+// Repo root = 5 levels up from runners/shared/
+// (verification/shared/id-rag-parallel/runners/shared → repo root).
+// Fixtures + quizzes moved from benchmarks/src/id-rag-parallel/ to
+// verification/shared/id-rag-parallel/ during a repo refactor; this resolver
+// follows that move. The legacy paydash fallback path is unchanged.
+const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..', '..');
+const FIXTURES_ROOT = path.resolve(REPO_ROOT, 'verification/shared/id-rag-parallel/fixtures');
+const QUIZZES_ROOT = path.resolve(REPO_ROOT, 'verification/shared/id-rag-parallel/quizzes');
 const LEGACY_PAYDASH_DECISIONS = path.resolve(
   REPO_ROOT,
-  'fixtures/paydash-api/.continuity/decisions.json',
+  'demo-projects/peer-review/with-continuity/.continuity/decisions.json',
 );
 
 export interface Decision {
@@ -150,7 +152,7 @@ function readDecisions(p: string): Decision[] {
   throw new Error(`decisions.json at ${p} is neither an array nor { decisions: [...] }`);
 }
 
-export const REPORTS_DIR = path.resolve(REPO_ROOT, 'reports');
+export const REPORTS_DIR = path.resolve(REPO_ROOT, 'benchmarks/reports');
 
 export function ensureReportsDir(): void {
   fs.mkdirSync(REPORTS_DIR, { recursive: true });

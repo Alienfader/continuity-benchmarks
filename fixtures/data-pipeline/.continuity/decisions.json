@@ -1,0 +1,158 @@
+[
+  {
+    "id": "pipeline-streaming-kafka",
+    "question": "Why Kafka (MSK) over Kinesis for the streaming layer?",
+    "answer": "Amazon MSK (managed Kafka) is the streaming backbone. Chosen over Kinesis because (1) we need long-retention replay (30+ days) for schema-change backfills and Kinesis' 7-day max forced ugly workarounds, (2) Debezium CDC connectors are first-class on Kafka Connect but require a shim on Kinesis, and (3) downstream consumers (Flink, Materialize) assume Kafka semantics. MSK is more expensive than Kinesis at small scale but cheaper once we exceeded 100 shards equivalent.",
+    "timestamp": "2025-10-12T14:00:00Z",
+    "tags": ["architecture", "streaming", "kafka"],
+    "status": "active"
+  },
+  {
+    "id": "pipeline-batch-dagster",
+    "question": "Why Dagster over Airflow for batch orchestration?",
+    "answer": "Dagster is the batch orchestrator. Chosen over Airflow because (1) asset-based model maps directly onto our warehouse tables while Airflow's task-graph model doesn't, (2) Dagster's software-defined assets integrate with dbt natively so we get one DAG across Python + SQL, and (3) local dev + testing story is much stronger — Dagster runs the same code in `dagster dev` as in prod. Airflow was the incumbent but the asset mismatch kept biting us.",
+    "timestamp": "2025-10-19T11:30:00Z",
+    "tags": ["architecture", "orchestration", "dagster"],
+    "status": "active"
+  },
+  {
+    "id": "pipeline-warehouse-snowflake",
+    "question": "Why Snowflake for the data warehouse?",
+    "answer": "Snowflake is the analytics warehouse. Chose over BigQuery (multi-cloud required — some customers are on AWS, some Azure) and Redshift (vacuum/distkey ops burden). Snowflake's separation of storage and compute lets us spin up a dedicated warehouse for each dbt job without touching the analyst warehouse. Credits are the dominant cost line — every dbt model must declare a `warehouse_size` annotation.",
+    "timestamp": "2025-10-26T09:40:00Z",
+    "tags": ["architecture", "warehouse", "snowflake"],
+    "status": "active"
+  },
+  {
+    "id": "pipeline-transforms-dbt",
+    "question": "Why dbt for warehouse transformations?",
+    "answer": "All warehouse transforms are written in dbt Core. SQL-first keeps the model layer accessible to the analytics team; Jinja + macros cover the rest. Stored procedures are forbidden — every transform must live in a versioned `models/*.sql`. Tests (`not_null`, `unique`, custom) are required on every mart-layer model before it can be released.",
+    "timestamp": "2025-11-02T13:20:00Z",
+    "tags": ["architecture", "transforms", "dbt"],
+    "status": "active"
+  },
+  {
+    "id": "pipeline-language-python-strict",
+    "question": "Why Python 3.12 with strict mypy?",
+    "answer": "Pipeline code is Python 3.12 with `mypy --strict`. Chose strict typing because silent schema drift between Kafka producers and Dagster consumers caused two prod incidents before we adopted this. Pydantic v2 is used for every external boundary (Kafka envelope, HTTP webhook, config file). No `Any` without an inline comment explaining why.",
+    "timestamp": "2025-11-09T10:15:00Z",
+    "tags": ["architecture", "language", "python", "mypy"],
+    "status": "active"
+  },
+  {
+    "id": "pipeline-connectors-airbyte",
+    "question": "Why Airbyte OSS for SaaS source connectors?",
+    "answer": "SaaS source ingestion (Stripe, HubSpot, Intercom, Salesforce) runs on self-hosted Airbyte OSS. Chose over Fivetran (rows-priced, too expensive at our event volume) and building our own (maintenance burden). We pin to specific connector versions and run them on a dedicated Kubernetes node pool so one noisy connector can't starve the rest.",
+    "timestamp": "2025-11-16T15:45:00Z",
+    "tags": ["architecture", "connectors", "airbyte"],
+    "status": "active"
+  },
+  {
+    "id": "pipeline-schema-registry-confluent",
+    "question": "Why Confluent Schema Registry for Kafka?",
+    "answer": "Confluent Schema Registry manages Kafka topic schemas. Chose over Apicurio (smaller community) and in-repo schemas (no runtime enforcement). Every producer must register its schema before publishing; compatibility mode is BACKWARD by default so consumers never break on new fields. Registry runs in the same VPC as MSK with no public endpoint.",
+    "timestamp": "2025-11-23T12:30:00Z",
+    "tags": ["architecture", "schema-registry", "confluent"],
+    "status": "active"
+  },
+  {
+    "id": "pipeline-serialization-avro",
+    "question": "What serialization format do we use on Kafka?",
+    "answer": "All Kafka topics use Avro binary format with schemas managed in Confluent Schema Registry. Chose over JSON (too large, no schema enforcement) and Protobuf (less Kafka tooling in Python at the time). Schemas evolve with BACKWARD compatibility; new fields must have defaults.",
+    "timestamp": "2025-11-30T09:00:00Z",
+    "tags": ["architecture", "serialization", "avro"],
+    "status": "superseded",
+    "supersededBy": "pipeline-serialization-protobuf"
+  },
+  {
+    "id": "pipeline-orchestration-k8s",
+    "question": "Why run Dagster on Kubernetes (KubernetesExecutor)?",
+    "answer": "Dagster runs on EKS with the KubernetesExecutor. Every run is a pod, every step can be a pod, so noisy jobs never starve lightweight ones. Node pools are segmented: `pipeline-cpu` (default), `pipeline-mem-heavy` (Snowflake loads), `pipeline-gpu` (ML feature jobs). We do not use Dagster Cloud — self-hosted on our infra because all customer data lands in our VPC.",
+    "timestamp": "2025-12-07T14:50:00Z",
+    "tags": ["architecture", "orchestration", "kubernetes"],
+    "status": "active"
+  },
+  {
+    "id": "pipeline-cdc-debezium",
+    "question": "Why Debezium for Postgres CDC?",
+    "answer": "Debezium streams change-data-capture from our transactional Postgres (payments, users) into Kafka. Chose Debezium over Maxwell (MySQL-focused) and AWS DMS (slower catch-up on backfills). Debezium uses logical replication slots — ops note: slots that lose their consumer will fill Postgres' WAL disk, so we have a monitoring alarm on replication slot lag > 2GB.",
+    "timestamp": "2025-12-14T11:20:00Z",
+    "tags": ["architecture", "cdc", "debezium", "postgres"],
+    "status": "active"
+  },
+  {
+    "id": "pipeline-storage-s3-parquet",
+    "question": "What's the lakehouse storage format?",
+    "answer": "Raw and staged data lands in S3 as Parquet with Snappy compression, partitioned by Hive-style date columns (`year=2026/month=04/day=23`). Chose Parquet over ORC (better Snowflake external-table support) and raw JSON (10-100x storage cost). Every new pipeline lands in `s3://{env}-lake/{domain}/{dataset}/` — no exceptions.",
+    "timestamp": "2025-12-21T13:10:00Z",
+    "tags": ["architecture", "storage", "s3", "parquet"],
+    "status": "active"
+  },
+  {
+    "id": "pipeline-catalog-glue",
+    "question": "Why AWS Glue as the data catalog?",
+    "answer": "AWS Glue Data Catalog is the metastore for S3 Parquet tables. Chose Glue over Hive Metastore (another service to run) and Unity Catalog (Databricks-only at the time). Snowflake external tables read Glue catalog directly; Athena queries use the same catalog so analysts can prototype before we materialize into Snowflake.",
+    "timestamp": "2026-01-04T10:25:00Z",
+    "tags": ["architecture", "catalog", "glue"],
+    "status": "active"
+  },
+  {
+    "id": "pipeline-dq-great-expectations",
+    "question": "How do we enforce data quality checks?",
+    "answer": "Data quality checks run on Great Expectations (GE), wrapped in Dagster asset checks. GE's expectation suite is versioned in-repo; failing expectations block downstream asset materialization. Chose GE over Soda SQL at this stage because GE's Python API integrates cleanly with Dagster's asset API.",
+    "timestamp": "2026-01-11T15:00:00Z",
+    "tags": ["architecture", "data-quality", "great-expectations"],
+    "status": "superseded",
+    "supersededBy": "pipeline-dq-soda-core"
+  },
+  {
+    "id": "pipeline-iac-terraform",
+    "question": "Why Terraform for infrastructure-as-code?",
+    "answer": "All AWS infrastructure (MSK, EKS, S3 buckets, IAM roles, Glue databases) is managed in Terraform. Chose Terraform over CDK (we wanted config-as-data, not config-as-code) and Pulumi (smaller team, fewer AWS integrations). Remote state lives in S3 + DynamoDB lock table. No `terraform apply` outside of CI.",
+    "timestamp": "2026-01-18T09:30:00Z",
+    "tags": ["architecture", "iac", "terraform"],
+    "status": "active"
+  },
+  {
+    "id": "pipeline-secrets-asm",
+    "question": "Where do pipeline secrets live?",
+    "answer": "Secrets (warehouse credentials, SaaS API keys, Debezium Postgres password) live in AWS Secrets Manager, rotated via Secrets Manager rotation lambdas where supported. Pods fetch secrets via the Secrets Store CSI driver — no secrets in environment variables at rest. Never commit a `.env` with real values; only `.env.example` with placeholders.",
+    "timestamp": "2026-01-25T14:40:00Z",
+    "tags": ["architecture", "secrets", "aws"],
+    "status": "active"
+  },
+  {
+    "id": "pipeline-serialization-protobuf",
+    "question": "Why did we migrate from Avro to Protobuf on Kafka?",
+    "answer": "All new Kafka topics use Protobuf v3 instead of Avro, and existing topics are migrated on a rolling basis. The switch was driven by (1) painful evolution of unions in Avro when we added optional variant fields, (2) Protobuf's well-known types (Timestamp, Duration) matching our domain better, and (3) better codegen in Python + Go + TypeScript so the same .proto file drives all three sides. Schema Registry now runs in Protobuf mode for new topics. Do not introduce new Avro topics.",
+    "timestamp": "2026-02-08T10:55:00Z",
+    "tags": ["architecture", "serialization", "protobuf"],
+    "status": "active",
+    "supersedes": "pipeline-serialization-avro"
+  },
+  {
+    "id": "pipeline-partitioning-hive",
+    "question": "How do we partition Parquet in S3?",
+    "answer": "All S3 Parquet datasets use Hive-style partitioning `year=YYYY/month=MM/day=DD/`. Reasons: (1) Glue/Athena auto-discover the partition scheme, (2) date-based partition pruning cuts Snowflake external-table scans by 10-100x, (3) daily backfill jobs map to a single prefix. Never partition by `hour=` — it creates small-file problems and our latency SLOs don't need it.",
+    "timestamp": "2026-02-15T13:05:00Z",
+    "tags": ["architecture", "partitioning", "parquet"],
+    "status": "active"
+  },
+  {
+    "id": "pipeline-pii-tokenization",
+    "question": "How do we handle PII in the warehouse?",
+    "answer": "PII columns (email, phone, full name, card last4) are tokenized at ingest using a deterministic HMAC-SHA256 with a key held in AWS KMS. Analysts query tokens, not cleartext. A separate reveal service (requires audit-logged request + two-person approval) can de-tokenize for compliance or support cases. Never store raw PII in the analytics warehouse; never ship tokens to third-party tools.",
+    "timestamp": "2026-02-22T11:40:00Z",
+    "tags": ["architecture", "pii", "compliance", "security"],
+    "status": "active"
+  },
+  {
+    "id": "pipeline-dq-soda-core",
+    "question": "Why did we replace Great Expectations with Soda Core?",
+    "answer": "Data quality checks now run on Soda Core, replacing Great Expectations. Drivers: (1) GE's expectation-suite YAML was unmaintainable past ~50 tables — we had 200+, (2) Soda's SodaCL is easier for analysts to write (looks like SQL assertions), and (3) Soda's Dagster integration caught up to GE's. Migration is complete; GE is fully removed from the repo and no new checks should reference it.",
+    "timestamp": "2026-03-01T15:30:00Z",
+    "tags": ["architecture", "data-quality", "soda"],
+    "status": "active",
+    "supersedes": "pipeline-dq-great-expectations"
+  }
+]

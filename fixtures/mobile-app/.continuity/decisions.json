@@ -1,0 +1,150 @@
+[
+  {
+    "id": "mobile-framework-rn",
+    "question": "Why React Native over Flutter?",
+    "answer": "React Native is the mobile framework. Chose over Flutter because (1) the team already writes React for the web dashboard so skill reuse is high, (2) our backend SDKs (Supabase, PostHog, Sentry) have first-class RN support and weaker Flutter support, and (3) JavaScriptCore + Hermes gives us enough performance for a habit tracker — we're not shipping a game. Flutter was genuinely tempting for tooling but the ecosystem cost won.",
+    "timestamp": "2025-09-02T10:00:00Z",
+    "tags": ["architecture", "framework", "react-native"],
+    "status": "active"
+  },
+  {
+    "id": "mobile-expo-managed",
+    "question": "Why Expo (managed-with-prebuild) instead of bare React Native?",
+    "answer": "We use Expo with the managed-with-prebuild workflow. EAS Build + EAS Submit remove a week of Xcode/Gradle ops per release. Prebuild lets us drop to native configs when we need a custom Info.plist entry. Bare RN was rejected — too much upkeep for a small team and no clear benefit for our feature set. Do not eject.",
+    "timestamp": "2025-09-09T14:30:00Z",
+    "tags": ["architecture", "expo", "build"],
+    "status": "active"
+  },
+  {
+    "id": "mobile-navigation-expo-router",
+    "question": "Why Expo Router over React Navigation?",
+    "answer": "Expo Router (v4) is the navigation layer. File-based routing matches our Next.js web app's mental model, which shortens onboarding for web devs. Typed routes catch route-name typos at compile time. React Navigation is fine but we found ourselves fighting its imperative API every time we added a deep link.",
+    "timestamp": "2025-09-16T09:45:00Z",
+    "tags": ["architecture", "navigation", "expo-router"],
+    "status": "active"
+  },
+  {
+    "id": "mobile-state-zustand",
+    "question": "Why Zustand over Redux or MobX for global state?",
+    "answer": "Global state lives in Zustand. Redux Toolkit is overkill for a habit tracker — actions/reducers/selectors add boilerplate without a clear payoff. MobX's observable proxies don't play nicely with React Native's Hermes engine in certain edge cases we hit during a POC. Zustand is plain hooks + a store; every selector is memoized by identity. Never introduce Redux alongside this.",
+    "timestamp": "2025-09-23T11:15:00Z",
+    "tags": ["architecture", "state", "zustand"],
+    "status": "active"
+  },
+  {
+    "id": "mobile-storage-mmkv",
+    "question": "Why react-native-mmkv over AsyncStorage?",
+    "answer": "On-device key-value storage is react-native-mmkv. Chose over AsyncStorage because MMKV is ~30x faster on cold reads (we measured) and synchronous — no await on app startup. Zustand `persist` is wired through MMKV. Encrypted partition is used for auth-adjacent keys. Do not write PII to the default unencrypted partition.",
+    "timestamp": "2025-09-30T16:00:00Z",
+    "tags": ["architecture", "storage", "mmkv"],
+    "status": "active"
+  },
+  {
+    "id": "mobile-api-tanstack-query",
+    "question": "Why TanStack Query (v5) for API state?",
+    "answer": "Server state is managed with TanStack Query v5. Chose over SWR because TanStack's mutation API (onMutate, onError, onSettled) handles optimistic updates better — habit completion is an optimistic update and SWR's approach didn't cover rollback cleanly. 30s default `staleTime`. Never useEffect-fetch; always go through a `useQuery` hook.",
+    "timestamp": "2025-10-07T12:20:00Z",
+    "tags": ["architecture", "api", "tanstack-query"],
+    "status": "active"
+  },
+  {
+    "id": "mobile-auth-clerk",
+    "question": "What auth provider do we use?",
+    "answer": "Auth is Clerk. Chose Clerk over Firebase Auth for its prebuilt React Native components (sign-in flow, account management) and Auth0 (too enterprise-priced at our user count). JWTs are issued by Clerk and exchanged for a Supabase session via an edge function.",
+    "timestamp": "2025-10-14T10:30:00Z",
+    "tags": ["architecture", "auth", "clerk"],
+    "status": "superseded",
+    "supersededBy": "mobile-auth-supabase"
+  },
+  {
+    "id": "mobile-analytics-posthog",
+    "question": "Why PostHog over Amplitude or Mixpanel?",
+    "answer": "Product analytics is PostHog (EU Cloud). Chose over Amplitude (expensive past 10M events/mo) and Mixpanel (weaker cohort features). PostHog's feature-flag + experiment combo lets us ship flags without a second vendor. Session replay is off for anything below the paywall by default — privacy choice, not cost.",
+    "timestamp": "2025-10-21T15:10:00Z",
+    "tags": ["architecture", "analytics", "posthog"],
+    "status": "active"
+  },
+  {
+    "id": "mobile-error-sentry-rn",
+    "question": "Why Sentry for crash + error tracking?",
+    "answer": "Sentry RN SDK tracks crashes and non-fatal errors. Chose over Firebase Crashlytics because Sentry unifies with our web + backend Sentry project — one view per release. Source maps are uploaded on every EAS build via a post-build hook. PII scrubbing enabled (email, device id hashed). Crashlytics bundle is NOT installed — it would duplicate reports.",
+    "timestamp": "2025-10-28T09:00:00Z",
+    "tags": ["architecture", "monitoring", "sentry"],
+    "status": "active"
+  },
+  {
+    "id": "mobile-push-native",
+    "question": "Why FCM + APNs directly instead of OneSignal?",
+    "answer": "Push notifications go through FCM (Android) and APNs (iOS) directly, dispatched server-side by a Supabase edge function. Chose over OneSignal and Expo Push because (1) we need delivery-receipt data that OneSignal gates behind its paid tier, (2) Expo Push adds a relay hop that cost us 200-400ms of notification latency in testing. Token registration happens on first login, not on app install.",
+    "timestamp": "2025-11-04T13:40:00Z",
+    "tags": ["architecture", "push", "fcm", "apns"],
+    "status": "active"
+  },
+  {
+    "id": "mobile-i18n-formatjs",
+    "question": "Why FormatJS over i18next?",
+    "answer": "Localization is FormatJS (react-intl). Chose over i18next because FormatJS handles ICU plural/select syntax natively — our copy team writes ICU and doesn't want to rewrite it. Translations live in `src/locales/{lang}.json`. Default locale is `en-US`; device locale drives runtime choice. Never concatenate translated strings in code.",
+    "timestamp": "2025-11-11T11:25:00Z",
+    "tags": ["architecture", "i18n", "formatjs"],
+    "status": "active"
+  },
+  {
+    "id": "mobile-e2e-detox",
+    "question": "What do we use for E2E testing?",
+    "answer": "E2E tests run on Detox against a debug build. Chose Detox over Appium because Detox has tighter React Native synchronization — it waits for the JS thread to idle. Tests run in CI on EAS-provided iOS simulators.",
+    "timestamp": "2025-11-18T10:50:00Z",
+    "tags": ["architecture", "testing", "detox"],
+    "status": "superseded",
+    "supersededBy": "mobile-e2e-maestro"
+  },
+  {
+    "id": "mobile-animations-reanimated",
+    "question": "Why Reanimated 3 for animations?",
+    "answer": "All non-trivial animations use React Native Reanimated 3 (worklets run on the UI thread). Chose over the core Animated API because Reanimated's shared values keep 60fps during large-list reorder animations. Never animate layout props via `setState` — jank is guaranteed on Android mid-tier devices. Use `useAnimatedStyle` + `withSpring`.",
+    "timestamp": "2025-11-25T14:05:00Z",
+    "tags": ["architecture", "animations", "reanimated"],
+    "status": "active"
+  },
+  {
+    "id": "mobile-forms-rhf",
+    "question": "Why React Hook Form over Formik?",
+    "answer": "Forms use React Hook Form + Zod resolver. Chose over Formik because RHF doesn't re-render on every keystroke (uncontrolled inputs by default) and the form tree on our onboarding screen is deep. Zod resolver gives us the same validation schema we share with the backend.",
+    "timestamp": "2025-12-02T16:20:00Z",
+    "tags": ["architecture", "forms", "react-hook-form"],
+    "status": "active"
+  },
+  {
+    "id": "mobile-auth-supabase",
+    "question": "Why did we move from Clerk to Supabase Auth?",
+    "answer": "Auth is now Supabase Auth, replacing Clerk. Drivers: (1) Clerk's per-MAU pricing would exceed Supabase's Pro tier once we crossed ~30k MAU, which we were approaching, (2) eliminating the Clerk-to-Supabase JWT exchange removed a source of login-failure reports, (3) Supabase Row Level Security maps cleanly onto our data model once auth lived inside Supabase. Clerk is fully removed; do not re-introduce a separate auth vendor.",
+    "timestamp": "2025-12-16T09:15:00Z",
+    "tags": ["architecture", "auth", "supabase"],
+    "status": "active",
+    "supersedes": "mobile-auth-clerk"
+  },
+  {
+    "id": "mobile-build-eas",
+    "question": "Why EAS Build over bare-workflow CI builds?",
+    "answer": "Releases are built and signed on EAS Build. Chose over self-hosted macOS runners because (1) Apple provisioning rotation is handled automatically, (2) we don't need to maintain a macOS fleet, (3) parallel iOS + Android builds cost less than one macOS runner-hour at our cadence. CI publishes OTA updates via EAS Update for JS-only changes.",
+    "timestamp": "2026-01-06T11:30:00Z",
+    "tags": ["architecture", "build", "eas"],
+    "status": "active"
+  },
+  {
+    "id": "mobile-codegen-nitro",
+    "question": "Why Nitro Modules for custom native bridges?",
+    "answer": "Custom native modules (biometric prompt wrapper, HealthKit bridge) are built with Nitro Modules. Chose over TurboModules because Nitro's codegen produces smaller, faster bridges and supports shared C++ implementations across iOS + Android. Do not add a new native module with the old bridge API — port to Nitro.",
+    "timestamp": "2026-01-20T14:00:00Z",
+    "tags": ["architecture", "native", "nitro"],
+    "status": "active"
+  },
+  {
+    "id": "mobile-e2e-maestro",
+    "question": "Why did we move from Detox to Maestro?",
+    "answer": "E2E tests now run on Maestro, replacing Detox. Drivers: (1) Detox's native synchronization broke repeatedly across RN upgrades — twice in 6 months, (2) Maestro's YAML flows are maintainable by PMs + designers, not just engineers, (3) Maestro Cloud gives us device-matrix runs without self-hosted simulators. Detox is fully removed from the repo; new E2E tests must be `.maestro/flows/*.yaml`.",
+    "timestamp": "2026-02-03T15:45:00Z",
+    "tags": ["architecture", "testing", "maestro"],
+    "status": "active",
+    "supersedes": "mobile-e2e-detox"
+  }
+]
