@@ -5,9 +5,9 @@
   "license": "MIT",
   "type": "commonjs",
   "scripts": {
-    "test:smoke": "ts-node --transpile-only runners/recall-over-time.ts --fixture paydash-api --model mock --sessions 1",
-    "test:smoke-v2": "ts-node --transpile-only runners/recall-over-time.ts --fixture data-pipeline --model mock --sessions 2 --conditions baseline,continuity-blanket,continuity-perq-frontloaded,continuity-in-loop",
-    "test:smoke-alignment": "ts-node --transpile-only runners/action-alignment.ts --fixture paydash-api --model mock --actions 3",
+    "test:smoke": "ts-node --transpile-only runners/recall-over-time.ts --fixture paydash-api --model mock --sessions 1 --output /tmp/smoke-recall",
+    "test:smoke-v2": "ts-node --transpile-only runners/recall-over-time.ts --fixture data-pipeline --model mock --sessions 2 --conditions baseline,continuity-blanket,continuity-perq-frontloaded,continuity-in-loop --output /tmp/smoke-recall-v2",
+    "test:smoke-alignment": "ts-node --transpile-only runners/action-alignment.ts --fixture paydash-api --model mock --actions 3 --output /tmp/smoke-alignment",
     "bench:recall": "ts-node --transpile-only runners/recall-over-time.ts",
     "bench:alignment": "ts-node --transpile-only runners/action-alignment.ts",
     "bench:convergence": "ts-node --transpile-only runners/convergence-time.ts",

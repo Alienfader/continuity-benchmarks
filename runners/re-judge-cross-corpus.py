@@ -19,11 +19,26 @@ Run:
 import os, re, json, glob, time, math, subprocess, tempfile
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[4]
-REPORTS_ROOT = REPO / "benchmarks/reports/id-rag-parity"
-ENV = REPO / "benchmarks/.env"
+def _resolve(candidates):
+    for c in candidates:
+        if c.exists():
+            return c
+    return candidates[0]
+
+_HERE = Path(__file__).resolve().parent
+REPORTS_ROOT = _resolve([
+    _HERE.parents[3] / "benchmarks" / "reports" / "id-rag-parity",  # continuity-ultimate
+    _HERE.parent / "reports" / "id-rag-parity",                     # continuity-benchmarks
+])
+ENV = _resolve([
+    _HERE.parents[3] / "benchmarks" / ".env",                       # continuity-ultimate
+    _HERE.parent / ".env",                                          # continuity-benchmarks
+])
 OUT = REPORTS_ROOT / "inter-judge-cross-corpus.json"
-FIXTURES_ROOT = REPO / "verification/shared/id-rag-parallel/fixtures"
+FIXTURES_ROOT = _resolve([
+    _HERE.parents[3] / "verification" / "shared" / "id-rag-parallel" / "fixtures",  # continuity-ultimate
+    _HERE.parent / "fixtures",                                                       # continuity-benchmarks
+])
 
 # Limit which action-alignment.json files we re-judge — only the
 # §4.7 cross-corpus matrix (data-pipeline + mobile-app), not paydash-api.

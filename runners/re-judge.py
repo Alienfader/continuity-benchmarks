@@ -18,9 +18,21 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[4]
-REPORTS_ROOT = REPO / "benchmarks/reports/id-rag-parity"
-ENV = REPO / "benchmarks/.env"
+def _resolve(candidates):
+    for c in candidates:
+        if c.exists():
+            return c
+    return candidates[0]
+
+_HERE = Path(__file__).resolve().parent
+REPORTS_ROOT = _resolve([
+    _HERE.parents[3] / "benchmarks" / "reports" / "id-rag-parity",  # continuity-ultimate
+    _HERE.parent / "reports" / "id-rag-parity",                     # continuity-benchmarks
+])
+ENV = _resolve([
+    _HERE.parents[3] / "benchmarks" / ".env",                       # continuity-ultimate
+    _HERE.parent / ".env",                                          # continuity-benchmarks
+])
 OUT = REPORTS_ROOT / "inter-judge.json"
 
 # ── Load .env ────────────────────────────────────────────────────────────────
