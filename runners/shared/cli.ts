@@ -25,6 +25,12 @@ export interface RunnerArgs {
   actions?: number;
   /** Runner-specific: convergence-time step count. */
   steps?: number;
+  /**
+   * Custom retrieval-system adapter name (looks up `systems/<name>/index.ts`).
+   * When set, the runner uses the adapter's retriever in place of the
+   * built-in BM25 for any Continuity-* condition. See systems/README.md.
+   */
+  system?: string;
   /** Verbose logging. */
   verbose?: boolean;
 }
@@ -61,9 +67,10 @@ export function parseArgs(argv: string[]): RunnerArgs {
   const topK = maybeNumber(raw, 'topK') ?? maybeNumber(raw, 'top-k');
   const actions = maybeNumber(raw, 'actions');
   const steps = maybeNumber(raw, 'steps');
+  const system = pickString(raw, 'system');
   const verbose = raw.verbose === true;
 
-  return { fixture, model, conditions, seed, mock, output, sessions, topK, actions, steps, verbose };
+  return { fixture, model, conditions, seed, mock, output, sessions, topK, actions, steps, system, verbose };
 }
 
 function pickString(raw: Record<string, string | boolean>, key: string): string | undefined {
@@ -87,6 +94,7 @@ export function printHelp(runnerName: string, extraFlags: string[] = []): void {
     '  --seed <n>              Deterministic seed (default: 42)',
     '  --mock                  Force mock LLM (no network)',
     '  --output <path>         Override report output base path',
+    '  --system <name>         Use a custom retrieval adapter from systems/<name>/ (see systems/README.md)',
     '  --verbose               Print per-question progress',
   ];
   console.log(`Usage: npx ts-node benchmarks/src/id-rag-parallel/runners/${runnerName}.ts [flags]\n`);

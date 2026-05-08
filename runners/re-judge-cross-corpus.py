@@ -14,9 +14,14 @@ saves paired Sonnet vs Gemini scores to inter-judge-cross-corpus.json.
 Existing inter-judge.json is preserved.
 
 Run:
-  python3 verification/shared/id-rag-parallel/runners/re-judge-cross-corpus.py
+  # Default — re-judges v1 cross-corpus action-alignment outputs:
+  python3 runners/re-judge-cross-corpus.py
+
+  # Target a different reports root (e.g. v2 cross-corpus):
+  python3 runners/re-judge-cross-corpus.py --reports-root reports/id-rag-parity-v2
+  REPORTS_ROOT=reports/id-rag-parity-v2 python3 runners/re-judge-cross-corpus.py
 """
-import os, re, json, glob, time, math, subprocess, tempfile
+import os, re, sys, json, glob, time, math, subprocess, tempfile, argparse
 from pathlib import Path
 
 def _resolve(candidates):
@@ -26,13 +31,30 @@ def _resolve(candidates):
     return candidates[0]
 
 _HERE = Path(__file__).resolve().parent
-REPORTS_ROOT = _resolve([
-    _HERE.parents[3] / "benchmarks" / "reports" / "id-rag-parity",  # continuity-ultimate
-    _HERE.parent / "reports" / "id-rag-parity",                     # continuity-benchmarks
-])
+
+# CLI override — `--reports-root <path>` lets us target the v2 outputs
+# without editing the resolution candidates. ENV var fallback for
+# scripted invocations. Either form, when set, completely replaces the
+# default v1-id-rag-parity resolution path.
+_parser = argparse.ArgumentParser(add_help=False)
+_parser.add_argument("--reports-root", dest="reports_root", default=None)
+_args, _unknown = _parser.parse_known_args()
+sys.argv = [sys.argv[0], *_unknown]  # so downstream argv inspection sees a clean list
+
+_REPORTS_ROOT_OVERRIDE = _args.reports_root or os.environ.get("REPORTS_ROOT")
+if _REPORTS_ROOT_OVERRIDE:
+    REPORTS_ROOT = Path(_REPORTS_ROOT_OVERRIDE).resolve()
+    if not REPORTS_ROOT.exists():
+        raise SystemExit(f"--reports-root {_REPORTS_ROOT_OVERRIDE} does not exist")
+else:
+    REPORTS_ROOT = _resolve([
+        _HERE.parents[3] / "benchmarks" / "reports" / "id-rag-parity",  # continuity-ultimate
+        _HERE.parent / "reports" / "id-rag-parity",                     # continuity-benchmarks
+    ])
 ENV = _resolve([
-    _HERE.parents[3] / "benchmarks" / ".env",                       # continuity-ultimate
+    _HERE.parents[3] / "benchmarks" / ".env",                       # continuity-ultimate (in-tree)
     _HERE.parent / ".env",                                          # continuity-benchmarks
+    _HERE.parents[1] / "continuity-ultimate" / "benchmarks" / ".env",  # sibling continuity-ultimate
 ])
 OUT = REPORTS_ROOT / "inter-judge-cross-corpus.json"
 FIXTURES_ROOT = _resolve([

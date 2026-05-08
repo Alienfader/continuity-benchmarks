@@ -22,7 +22,11 @@
     "test:smoke-agent-loop": "tsx runners/middleware-replay.ts --fixture data-pipeline --model mock --questions 2 --retrieval=agent-loop --output /tmp/smoke-agent-loop",
     "test:smoke-auto-middleware": "tsx runners/middleware-replay.ts --fixture data-pipeline --model mock --questions 2 --retrieval=auto-middleware --output /tmp/smoke-auto-middleware",
     "rejudge:paydash": "python3 runners/re-judge.py",
-    "rejudge:cross-corpus": "python3 runners/re-judge-cross-corpus.py"
+    "rejudge:cross-corpus": "python3 runners/re-judge-cross-corpus.py",
+    "rejudge:cross-corpus-v2": "python3 runners/re-judge-cross-corpus.py --reports-root reports/id-rag-parity-v2",
+    "bench:custom": "bash scripts/bench-custom.sh",
+    "bench:compare": "ts-node --transpile-only scripts/compare-runs.ts",
+    "test:smoke-custom": "bash scripts/bench-custom.sh --runner=recall --system=example-bm25 --fixture=paydash-api --model=mock --sessions=1 --output=/tmp/smoke-custom-recall"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

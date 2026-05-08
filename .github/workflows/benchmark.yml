@@ -1,0 +1,120 @@
+name: Benchmark CI
+
+# Smoke-only benchmark CI. Uses --model=mock so no API keys / cost.
+# Exercises the runner plumbing + the systems/ adapter contract end-to-end
+# so PRs that break either fail loud and early.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Smoke — recall-over-time (built-in conditions)
+        run: npm run test:smoke
+
+      - name: Smoke — recall v2 (4-condition M2 ablation)
+        run: npm run test:smoke-v2
+
+      - name: Smoke — action-alignment
+        run: npm run test:smoke-alignment
+
+      - name: Smoke — systems/example-bm25 adapter (recall lane)
+        run: npm run test:smoke-custom
+
+      - name: Smoke — systems/example-bm25 adapter (alignment lane)
+        run: |
+          bash scripts/bench-custom.sh \
+            --runner=alignment \
+            --system=example-bm25 \
+            --fixture=paydash-api \
+            --model=mock \
+            --actions=3 \
+            --output=/tmp/smoke-custom-alignment
+
+      - name: Compare — built-in vs example-bm25 adapter (recall)
+        run: |
+          npm run bench:compare -- \
+            --baseline=/tmp/smoke-recall.json \
+            --custom=/tmp/smoke-custom-recall.json \
+            --output=/tmp/smoke-compare-recall.json
+        # /tmp/smoke-recall.json is produced by `npm run test:smoke` above.
+
+      - name: Compare — built-in vs example-bm25 adapter (alignment)
+        run: |
+          npm run bench:compare -- \
+            --baseline=/tmp/smoke-alignment.json \
+            --custom=/tmp/smoke-custom-alignment.json \
+            --output=/tmp/smoke-compare-alignment.json
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            /tmp/smoke-recall.json
+            /tmp/smoke-recall-v2.json
+            /tmp/smoke-alignment.json
+            /tmp/smoke-custom-recall.json
+            /tmp/smoke-custom-alignment.json
+            /tmp/smoke-compare-recall.json
+            /tmp/smoke-compare-alignment.json
+          if-no-files-found: warn
+
+      - name: Comment results on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const recall = JSON.parse(fs.readFileSync('/tmp/smoke-compare-recall.json', 'utf8'));
+            const align = JSON.parse(fs.readFileSync('/tmp/smoke-compare-alignment.json', 'utf8'));
+            const body = [
+              '## 🧪 Benchmark CI — smoke results',
+              '',
+              '> Smoke runs use `--model=mock` and tiny fixtures, so absolute scores are meaningless. The point is whether the plumbing (runners + `systems/` adapter contract + comparison script) still works end-to-end.',
+              '',
+              '### Recall lane (built-in vs systems/example-bm25)',
+              '```',
+              recall.summaryText,
+              '```',
+              '',
+              '### Alignment lane (built-in vs systems/example-bm25)',
+              '```',
+              align.summaryText,
+              '```',
+              '',
+              '<details><summary>Full delta JSONs</summary>',
+              '',
+              '```json',
+              JSON.stringify({ recall, align }, null, 2),
+              '```',
+              '',
+              '</details>',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });

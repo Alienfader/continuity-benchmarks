@@ -104,13 +104,43 @@ npm run bootstrap:ci             # BCa 95% CIs on Cohen's d, 10,000 resamples
 
 If you ship "memory for coding agents" — long-context, RAG, vector DB, agent framework, custom — you can run it through the same fixtures.
 
-The benchmark is **two layers**:
+The benchmark is **three layers**, easiest to hardest:
 
-1. **Generic recall + alignment lanes** (`runners/recall-over-time.ts`, `runners/action-alignment.ts`) work with any model/retrieval combo. Bring your own retrieval engine: implement a function that takes a prompt and returns top-K decisions, and wire it as a new condition. The fixture decisions live at `fixtures/<name>/.continuity/decisions.json`; quizzes at `prompts/quizzes/<name>.json`.
+### 1. `systems/` adapter — drop-in retrieval replacement (Recommended)
 
-2. **End-to-end MCP middleware lane** (`runners/middleware-replay.ts`) speaks the Model Context Protocol — point it at any MCP server that exposes a retrieval tool by setting `CONTINUITY_MCP_PATH=/path/to/your/server.js`. Three replay modes: `mcp-search` (single-shot tool call), `agent-loop` (2-turn agent decides whether/how to query), `auto-middleware` (server-side middleware extracts retrieval keys from tool-call arguments).
+Implement a `RetrievalSystem` and the runner does the rest:
 
-Note: `runners/head-to-head.ts` (Continuity vs MemPalace, §4.3 of the white paper) imports the closed-source `@continuity/core` `SemanticSearchService` as the production retrieval ranker — it's a reference implementation, not a contribution lane. See the file header for how to swap in your own.
+```ts
+// systems/my-vector-db/index.ts
+import type { RetrievalSystem } from '../../runners/shared/system-adapter';
+
+export default {
+  name: 'my-vector-db',
+  description: 'Pinecone + text-embedding-3-large + cosine top-K',
+  async init(decisions) {
+    const index = await embedAndIndex(decisions);
+    return { retrieve: (query, k) => index.queryTopK(query, k) };
+  },
+} satisfies RetrievalSystem;
+```
+
+```bash
+npm run bench:custom -- --runner=recall    --system=my-vector-db --fixture=paydash-api --model=gpt-4o-mini --output=reports/my-run/recall
+npm run bench:custom -- --runner=alignment --system=my-vector-db --fixture=paydash-api --model=gpt-4o-mini --output=reports/my-run/alignment
+npm run bench:compare -- --baseline=reports/id-rag-parity-v2/.../recall-over-time.json --custom=reports/my-run/recall.json --output=reports/my-summary.json
+```
+
+Full contract + reference adapter (`systems/example-bm25/`) at [`systems/README.md`](systems/README.md). Smoke test the contract with `npm run test:smoke-custom` (no API spend, ~10s).
+
+### 2. End-to-end MCP middleware lane
+
+`runners/middleware-replay.ts` speaks the Model Context Protocol — point it at any MCP server that exposes a retrieval tool by setting `CONTINUITY_MCP_PATH=/path/to/your/server.js`. Three replay modes: `mcp-search` (single-shot tool call), `agent-loop` (2-turn agent decides whether/how to query), `auto-middleware` (server-side middleware extracts retrieval keys from tool-call arguments).
+
+### 3. Direct runner invocation
+
+The recall + alignment runners (`runners/recall-over-time.ts`, `runners/action-alignment.ts`) work with any model. Fixture decisions live at `fixtures/<name>/.continuity/decisions.json`; quizzes at `prompts/quizzes/<name>.json`. Use this if you need to change the conditions themselves rather than just the retriever.
+
+Note: `runners/head-to-head.ts` (Continuity vs MemPalace, §4.3 of the white paper) imports the closed-source `@continuity/core` `SemanticSearchService` as the production retrieval ranker — it's a reference implementation, not a contribution lane.
 
 ---
 

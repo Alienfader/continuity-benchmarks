@@ -35,7 +35,8 @@ import {
   FixtureProject,
   Decision,
 } from './shared/fixtures';
-import { BM25Retriever, Condition, renderContext, extractEntities } from './shared/retrieval';
+import { BM25Retriever, Condition, Retriever, renderContext, extractEntities } from './shared/retrieval';
+import { loadSystem } from './shared/system-adapter';
 
 interface ActionResult {
   actionId: string;
@@ -69,6 +70,8 @@ interface AlignmentReport {
   summaries: ConditionSummary[];
   results: ActionResult[];
   generatedAt: string;
+  /** Custom retrieval system name when --system=<name> was used. */
+  system?: string;
 }
 
 // ── Action prompt generation ──────────────────────────────────────────────────
@@ -230,7 +233,7 @@ async function askAgent(
   return { text: r.text, inputTokens: r.inputTokens, outputTokens: r.outputTokens, durationMs: r.durationMs };
 }
 
-function buildMockAgentResponder(retriever: BM25Retriever): (prompt: string) => string {
+function buildMockAgentResponder(retriever: Retriever): (prompt: string) => string {
   return (prompt: string) => {
     const parts = prompt.split('---');
     const hasContext = parts.length >= 2;
@@ -321,7 +324,17 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   const topK = args.topK ?? 5;
 
   const fixture = loadFixture(args.fixture);
-  const retriever = new BM25Retriever(fixture.decisions);
+  let retriever: Retriever = new BM25Retriever(fixture.decisions);
+  let systemLabel: string | undefined;
+  if (args.system) {
+    const projectRoot = path.resolve(__dirname, '..');
+    const adapter = await loadSystem(args.system, projectRoot);
+    retriever = await adapter.init(fixture.decisions);
+    systemLabel = adapter.name;
+    console.log(
+      `[action-alignment] system=${adapter.name}${adapter.description ? ` (${adapter.description})` : ''}`,
+    );
+  }
   const actionPrompts = buildActionPrompts(fixture, actions);
 
   const useMock = args.mock || args.model === 'mock';
@@ -401,6 +414,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     summaries,
     results,
     generatedAt: new Date().toISOString(),
+    ...(systemLabel ? { system: systemLabel } : {}),
   };
 
   ensureReportsDir();

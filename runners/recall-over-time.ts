@@ -67,7 +67,8 @@ import {
   Quiz,
   QuizQuestion,
 } from './shared/fixtures';
-import { BM25Retriever, Condition, renderContext } from './shared/retrieval';
+import { BM25Retriever, Condition, Retriever, renderContext } from './shared/retrieval';
+import { loadSystem } from './shared/system-adapter';
 
 interface PerQuestionRecord {
   sessionIdx: number;
@@ -102,6 +103,8 @@ interface RecallReport {
   quizSize: number;
   conditions: ConditionReport[];
   generatedAt: string;
+  /** Custom retrieval system name when --system=<name> was used. */
+  system?: string;
 }
 
 // ── Mock responder used when --model=mock ─────────────────────────────────────
@@ -163,7 +166,7 @@ async function runCondition(args: {
   client: LLMClient;
   embedder: Embedder;
   quiz: Quiz;
-  retriever: BM25Retriever;
+  retriever: Retriever;
   sessions: number;
   topK: number;
   seed: number;
@@ -352,7 +355,17 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
 
   const fixture = loadFixture(args.fixture);
   const quiz = loadQuiz(args.fixture, fixture);
-  const retriever = new BM25Retriever(fixture.decisions);
+  let retriever: Retriever = new BM25Retriever(fixture.decisions);
+  let systemLabel: string | undefined;
+  if (args.system) {
+    const projectRoot = path.resolve(__dirname, '..');
+    const adapter = await loadSystem(args.system, projectRoot);
+    retriever = await adapter.init(fixture.decisions);
+    systemLabel = adapter.name;
+    console.log(
+      `[recall-over-time] system=${adapter.name}${adapter.description ? ` (${adapter.description})` : ''}`,
+    );
+  }
 
   const useMock = args.mock || args.model === 'mock';
   const mockResponder = useMock
@@ -396,6 +409,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     quizSize: quiz.questions.length,
     conditions: conditionReports,
     generatedAt: new Date().toISOString(),
+    ...(systemLabel ? { system: systemLabel } : {}),
   };
 
   ensureReportsDir();
