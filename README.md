@@ -61,8 +61,9 @@ npm run analyze:v2
 | `runners/action-alignment.ts` | 30 prompts × 3 conditions; LLM-as-a-judge scores proposed actions 1–10. |
 | `runners/convergence-time.ts` | Time-to-completion benchmark for fixed multi-step refactor tasks. |
 | `runners/head-to-head.ts` | Continuity-vs-MemPalace 50-query benchmark (§4.3 of the white paper). Imports `@continuity/core`'s `SemanticSearchService`, which is closed-source — see file header for the dependency note + how to swap in your own retrieval engine. Saved per-query results are at `reports/head-to-head-*.json`. |
-| `runners/middleware-replay.ts` | `continuity-mcp-middleware` runner — end-to-end replay through the production Continuity MCP server. Two retrieval modes: `mcp-search` (calls the production `search_decisions` tool, exercising the real `SemanticSearchService` RRF ranker) and `auto-middleware` (fires `AutoRetrievalMiddleware` via a `bash` tool call; requires `code-links.json` in the workspace, no-ops on fixtures without it). Set `CONTINUITY_MCP_PATH` to your local MCP server bundle. Smoke: `npm run test:smoke-middleware-replay`. |
-| `runners/shared/mcp-client.ts` | MCP client wiring for `middleware-replay.ts` — spawns the production server as a stdio subprocess, calls `search_decisions` and `bash`, parses tool-result `_meta.relevantDecisions` payload. |
+| `runners/middleware-replay.ts` | `continuity-mcp-middleware` runner — end-to-end replay through the production Continuity MCP server. Three retrieval modes: `mcp-search` (single-shot, calls `search_decisions` directly), `agent-loop` (2-turn, agent decides whether/how to query `search_decisions`), `auto-middleware` (2-turn, agent uses the benchmark-mode `bash` tool; AutoRetrievalMiddleware fires server-side and injects decisions into `_meta.relevantDecisions`). Set `CONTINUITY_MCP_PATH` to your local MCP server bundle. Smoke: `npm run test:smoke-middleware-replay` / `test:smoke-agent-loop` / `test:smoke-auto-middleware`. |
+| `runners/shared/mcp-client.ts` | MCP client wiring — spawns the production server as a stdio subprocess, dispatches arbitrary tool calls (`dispatchToolCall`), parses tool-result `_meta.relevantDecisions` payload, plus convenience helpers for `search_decisions` and middleware-firing tool calls. |
+| `runners/shared/agent-client.ts` | Tool-calling agent abstraction (Anthropic + OpenAI + deterministic Mock). Powers the 2-turn loops in `agent-loop` and `auto-middleware` modes. Supports one round of tool use per question (turn 1: agent decides what tool to call; turn 2: agent reads tool result and generates final answer). |
 | `runners/re-judge.py` | Cross-validates saved paydash action-alignment scores using Gemini-2.5-flash; emits Cohen's κ + Spearman ρ. |
 | `runners/re-judge-cross-corpus.py` | Same but for the v2 cross-corpus matrix (n=1,080 paired scores). |
 | `runners/bootstrap-ci.py` | BCa (bias-corrected and accelerated) bootstrap 95% CIs on Cohen's d for every contrast in the v2 matrix; 10,000 resamples. Outputs `reports/id-rag-parity-v2/bootstrap-ci.json`. |
@@ -110,12 +111,19 @@ For 30 proposed-action prompts × 3 conditions:
 
 The runner faithfully simulates the **retrieval-keying logic** of the middleware (entity extraction → query → top-K decisions). It does **not** exercise the **tool-call interception delivery mechanism** (prompt-prepend vs `_meta`-inject is a real distinction the public benchmark does not currently isolate). The §4.7 timing-ablation conclusions in the white paper therefore apply to entity-keyed retrieval delivered via prompt-prepend.
 
-Production-middleware delivery is implemented end-to-end in `runners/middleware-replay.ts` (smoke-tests pass against the production MCP server). To run it: set `CONTINUITY_MCP_PATH=/path/to/packages/mcp-server/dist/index.js` and invoke `npm run bench:middleware-replay -- --fixture <name> --model <name> --retrieval=mcp-search --output reports/<dir>`. Two retrieval modes are supported:
+Production-middleware delivery is implemented end-to-end in `runners/middleware-replay.ts` (smoke-tests pass against the production MCP server in all three modes). To run it: set `CONTINUITY_MCP_PATH=/path/to/packages/mcp-server/dist/index.js` and invoke `npm run bench:middleware-replay -- --fixture <name> --model <name> --retrieval=<mode> --output reports/<dir>`. Three retrieval modes:
 
-- `--retrieval=mcp-search` — calls the production `search_decisions` MCP tool, exercising the real `SemanticSearchService` RRF hybrid ranker (semantic + keyword + tags). Works on any fixture.
-- `--retrieval=auto-middleware` — fires the production `AutoRetrievalMiddleware` via a `bash` tool call; requires `code-links.json` in the workspace. The public fixtures intentionally ship without code-links (decisions reference systems by name, not file paths), so this mode no-ops on them — that's the honest production-replay result given the fixture shape, and is itself a useful experimental data point.
+- `--retrieval=mcp-search` (single-shot): calls the production `search_decisions` MCP tool with the prompt as the query. Tests the production retrieval ranker (`SemanticSearchService` RRF hybrid: semantic + keyword + tags) delivered via real MCP. No agent reasoning. Works on any fixture.
 
-Populating a `continuity-mcp-middleware` row in the v2 matrix would cost ~$30–50 in API spend; doing so is the next pre-registered protocol expansion.
+- `--retrieval=agent-loop` (2-turn): the agent has `search_decisions` advertised as a tool. Turn 1: agent decides whether/how to query. Turn 2: MCP returns decisions, agent generates the final answer. Tests the **full production agent + retrieval ranker via real MCP**, which is what most production agent operators actually exercise. Works on any fixture.
+
+- `--retrieval=auto-middleware` (2-turn): the agent has the benchmark-mode `bash` tool advertised. Turn 1: agent issues `cat <path>`. Server-side: `AutoRetrievalMiddleware` extracts paths from the bash command, looks them up in `code-links.json`, and injects matched decisions into the tool result's `_meta.relevantDecisions` field. Turn 2: agent reads the tool result + injected decisions, generates the final answer. Tests the **production AutoRetrievalMiddleware delivery shape end-to-end**, which is the specific code path the §4.7 in-loop simulation only approximated.
+
+  Requirements for `auto-middleware`:
+  - The MCP server must be built with the `bash` tool registered. The runner sets `CONTINUITY_BENCHMARK_MODE=1` on the spawned server automatically; this gates the `bash` tool registration to benchmark use only (the env var is unset in normal user-facing deployments).
+  - The workspace must have `.continuity/code-links.json` mapping decision IDs to file paths the agent can reference. The `data-pipeline` fixture ships with one pre-authored.
+
+Populating any of these as a row in the v2 matrix costs ~$30–50 in API spend per mode; doing so is the next pre-registered protocol expansion.
 
 ---
 

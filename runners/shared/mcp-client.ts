@@ -136,6 +136,56 @@ export class McpClient {
     return parseMetaInjection(response);
   }
 
+  /**
+   * Raw tool dispatch — send the agent's tool call verbatim to the MCP
+   * server and return the full result. The runner uses this in agent-loop
+   * mode to dispatch whatever tool the agent decided to call (search_decisions,
+   * bash, etc.) and capture both the tool's output content and any
+   * `_meta.relevantDecisions` injected by AutoRetrievalMiddleware.
+   */
+  async dispatchToolCall(
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<{
+    /** Concatenated text content from all `text` content blocks. */
+    contentText: string;
+    /** Decisions injected via AutoRetrievalMiddleware, if any. */
+    injectedDecisions: McpDecision[];
+    /** Whether the call returned isError=true at the protocol level. */
+    isError: boolean;
+    /** Raw response for debugging. */
+    raw: unknown;
+  }> {
+    let response: unknown;
+    let isError = false;
+    try {
+      response = await this.client.callTool({ name, arguments: args });
+    } catch (err) {
+      isError = true;
+      response = {
+        content: [{ type: 'text', text: `[MCP error] ${(err as Error).message}` }],
+        isError: true,
+      };
+    }
+    const r = response as {
+      content?: Array<{ type?: string; text?: string }>;
+      isError?: boolean;
+      _meta?: { relevantDecisions?: Array<Partial<McpDecision>> };
+    };
+    if (r.isError) isError = true;
+    const contentText = (r.content ?? [])
+      .filter((b) => b.type === 'text' && typeof b.text === 'string')
+      .map((b) => b.text!)
+      .join('\n');
+    const injectedDecisions: McpDecision[] = (r._meta?.relevantDecisions ?? []).map((d) => ({
+      id: d.id ?? '',
+      question: d.question ?? '',
+      answer: d.answer ?? '',
+      tags: d.tags ?? [],
+    }));
+    return { contentText, injectedDecisions, isError, raw: response };
+  }
+
   async close(): Promise<void> {
     try {
       await this.client.close();

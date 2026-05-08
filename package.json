@@ -19,6 +19,8 @@
     "bench:head-to-head": "tsx runners/head-to-head.ts",
     "bench:middleware-replay": "tsx runners/middleware-replay.ts",
     "test:smoke-middleware-replay": "tsx runners/middleware-replay.ts --fixture data-pipeline --model mock --questions 2 --retrieval=mcp-search --output /tmp/smoke-mw-replay",
+    "test:smoke-agent-loop": "tsx runners/middleware-replay.ts --fixture data-pipeline --model mock --questions 2 --retrieval=agent-loop --output /tmp/smoke-agent-loop",
+    "test:smoke-auto-middleware": "tsx runners/middleware-replay.ts --fixture data-pipeline --model mock --questions 2 --retrieval=auto-middleware --output /tmp/smoke-auto-middleware",
     "rejudge:paydash": "python3 runners/re-judge.py",
     "rejudge:cross-corpus": "python3 runners/re-judge-cross-corpus.py"
   },

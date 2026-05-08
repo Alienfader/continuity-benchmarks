@@ -1,10 +1,50 @@
 /**
- * `continuity-mcp-middleware` runner — END-TO-END PRODUCTION-MIDDLEWARE REPLAY
+ * Production-middleware replay runner. Three retrieval modes, all
+ * end-to-end through real MCP stdio transport:
  *
- * Status: implemented end-to-end (MCP-client wiring + agent-call shape +
- * scoring). Smoke tests pass: `npm run test:smoke-middleware-replay`.
- * The v2 matrix run is gated on user green-light because it costs
- * ~$30–50 in API spend.
+ *   1. mcp-search     (default) — single-shot. Calls the production
+ *                                 search_decisions MCP tool with the
+ *                                 prompt as the query. Tests the
+ *                                 production retrieval ranker
+ *                                 (SemanticSearchService RRF hybrid)
+ *                                 delivered via MCP. No agent reasoning.
+ *
+ *   2. agent-loop                — 2-turn loop. The agent has
+ *                                 search_decisions advertised; it
+ *                                 decides whether/how to query, MCP
+ *                                 returns real decisions through the
+ *                                 production ranker, the agent
+ *                                 generates the final answer in turn 2.
+ *                                 Tests the full agent + production
+ *                                 retrieval ranker via real MCP.
+ *
+ *   3. auto-middleware           — 2-turn loop. The agent has the
+ *                                 benchmark-mode `bash` tool advertised;
+ *                                 it issues `cat <path>` calls. The
+ *                                 production AutoRetrievalMiddleware
+ *                                 fires on path-bearing tool args, looks
+ *                                 up code-links.json, and injects
+ *                                 matched decisions into
+ *                                 _meta.relevantDecisions. Tests the
+ *                                 production AutoRetrievalMiddleware
+ *                                 delivery shape end-to-end.
+ *
+ *                                 Requires:
+ *                                 (a) MCP server with
+ *                                     CONTINUITY_BENCHMARK_MODE=1, which
+ *                                     exposes the read-only `bash` tool.
+ *                                 (b) code-links.json in the workspace
+ *                                     mapping decision IDs to file
+ *                                     paths the agent can reference.
+ *                                 The data-pipeline fixture ships with
+ *                                 both pre-configured. The runner
+ *                                 forwards CONTINUITY_BENCHMARK_MODE=1
+ *                                 to the spawned server automatically
+ *                                 when this mode is selected.
+ *
+ * Smoke tests pass for all three modes (mock model). The v2 matrix run
+ * for any mode is gated on user green-light because it costs ~$30–50
+ * in API spend.
  *
  * ── WHY THIS RUNNER EXISTS ────────────────────────────────────────────────
  *
@@ -107,12 +147,16 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { McpClient, McpDecision } from './shared/mcp-client';
-import { loadFixture, FixtureProject } from './shared/fixtures';
 import { LLMClient, createLLMClient, SupportedModel } from './shared/llm-providers';
 import { Embedder, EvalEmbedder, MockEmbedder, cosineSimilarity } from './shared/eval-embeddings';
-import { extractEntities } from './shared/retrieval';
+import {
+  ToolCallingAgent,
+  ToolDef,
+  ToolResult,
+  createAgent,
+} from './shared/agent-client';
 
-type RetrievalMode = 'mcp-search' | 'auto-middleware';
+type RetrievalMode = 'mcp-search' | 'auto-middleware' | 'agent-loop';
 
 interface ReplayArgs {
   fixtureName: string;
@@ -175,7 +219,16 @@ function parseArgs(argv: string[]): ReplayArgs {
         'Args:',
         '  --fixture     Fixture name from prompts/quizzes/ (e.g. data-pipeline)',
         '  --model       LLM identifier (mock, gpt-4o, gpt-4o-mini, claude-sonnet-4-6)',
-        '  --retrieval   "mcp-search" (default) or "auto-middleware"',
+        '  --retrieval   one of:',
+        '                  "mcp-search"     — calls search_decisions on the prompt directly',
+        '                                     (single-shot, no agent reasoning)',
+        '                  "agent-loop"     — 2-turn loop, agent decides whether/how to',
+        '                                     query search_decisions; tests full agent +',
+        '                                     production retrieval ranker via real MCP',
+        '                  "auto-middleware" — 2-turn loop with bash tool advertised; tests',
+        '                                     AutoRetrievalMiddleware delivery via _meta;',
+        '                                     requires CONTINUITY_BENCHMARK_MODE=1 server build',
+        '                                     and code-links.json in workspace',
         '  --questions   Questions per run (default: full quiz)',
         '  --top-k       Decisions retrieved per question (default: 5)',
         '  --seed        RNG seed for repro (default: 1)',
@@ -194,9 +247,13 @@ function parseArgs(argv: string[]): ReplayArgs {
   }
 
   const retrievalRaw = get('--retrieval', 'mcp-search');
-  if (retrievalRaw !== 'mcp-search' && retrievalRaw !== 'auto-middleware') {
+  if (
+    retrievalRaw !== 'mcp-search' &&
+    retrievalRaw !== 'auto-middleware' &&
+    retrievalRaw !== 'agent-loop'
+  ) {
     throw new Error(
-      `--retrieval must be "mcp-search" or "auto-middleware", got: ${retrievalRaw}`,
+      `--retrieval must be "mcp-search", "agent-loop", or "auto-middleware"; got: ${retrievalRaw}`,
     );
   }
 
@@ -299,29 +356,224 @@ async function answerQuestion(
   };
 }
 
-async function retrieveForQuestion(
+/**
+ * Single-shot retrieval (mode=mcp-search). Calls the production MCP
+ * search_decisions tool directly with the prompt as the query, returning
+ * the top-K decisions. No agent reasoning involved — this is the
+ * "passive RAG" baseline delivered through the production retrieval
+ * ranker via real MCP transport.
+ */
+async function retrieveForQuestionMcpSearch(
   client: McpClient,
-  fixture: FixtureProject,
   question: string,
-  mode: RetrievalMode,
   topK: number,
 ): Promise<{ decisions: McpDecision[]; middlewareFired: boolean }> {
-  if (mode === 'mcp-search') {
-    const result = await client.searchDecisions(question, topK, 'hybrid');
-    return { decisions: result.decisions, middlewareFired: false };
+  const result = await client.searchDecisions(question, topK, 'hybrid');
+  return { decisions: result.decisions, middlewareFired: false };
+}
+
+const BASH_TOOL: ToolDef = {
+  name: 'bash',
+  description:
+    'Run a read-only file-inspection command in the project workspace. ' +
+    "Use this to look at the contents of source files relevant to the user's question. " +
+    'The Continuity AutoRetrievalMiddleware monitors this tool and surfaces project ' +
+    'decisions linked to any file paths in the command. ' +
+    'Only `cat <path>` is supported in benchmark mode (no arbitrary execution).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      command: {
+        type: 'string',
+        description:
+          'A shell command of the form `cat <relative-path-to-source-file>`. ' +
+          'Example: `cat src/streaming/kafka.ts`. The path must be relative to the project root.',
+      },
+    },
+    required: ['command'],
+  },
+};
+
+const SEARCH_DECISIONS_TOOL: ToolDef = {
+  name: 'search_decisions',
+  description:
+    'Search the project decision store for entries relevant to a query. ' +
+    'Use this when the user asks a "why" question about a project decision, ' +
+    'or when you need to ground an answer in past architectural rationale. ' +
+    'Returns a list of decisions ranked by hybrid keyword + semantic relevance.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      query: {
+        type: 'string',
+        description: 'A search query (natural language or keywords)',
+      },
+      limit: {
+        type: 'number',
+        description: 'Maximum number of decisions to return (default 5)',
+      },
+    },
+    required: ['query'],
+  },
+};
+
+/**
+ * Convert the MCP search-tool response (a JSON-with-trailing-prose blob
+ * inside content[1].text) into a clean string the agent can read in
+ * turn 2. We strip the trailing prose footer but keep the JSON results
+ * intact — the agent needs the structured data, not the wiki-page hint.
+ */
+function cleanSearchToolText(rawText: string): string {
+  if (!rawText.trim().startsWith('{')) return rawText;
+  // Find the closing brace of the leading JSON object (same brace-matching
+  // logic as in mcp-client). Anything after is trailing prose.
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < rawText.length; i++) {
+    const ch = rawText[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (inString) {
+      if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return rawText.slice(0, i + 1);
+    }
+  }
+  return rawText;
+}
+
+interface AgentLoopOutcome {
+  decisions: McpDecision[];
+  middlewareFired: boolean;
+  /** The agent's final-turn answer text. */
+  finalAnswer: string;
+  inputTokens: number;
+  outputTokens: number;
+  /** True if the agent skipped tooling and answered directly in turn 1. */
+  agentAnsweredDirectly: boolean;
+}
+
+/**
+ * 2-turn agent loop (modes agent-loop and auto-middleware). The agent
+ * has one tool advertised; it decides in turn 1 whether to call it, then
+ * in turn 2 generates a final answer using the tool result (if any).
+ *
+ * Returns both the agent's final answer (which is what we score) AND
+ * any decisions that were retrieved (for reporting / diagnostics).
+ */
+async function runAgentLoop(args: {
+  agent: ToolCallingAgent;
+  client: McpClient;
+  question: string;
+  groundTruth: string;
+  tool: ToolDef;
+  topK: number;
+}): Promise<AgentLoopOutcome> {
+  const systemPrompt =
+    "You are an engineering assistant familiar with this project. Use the provided tool to look up relevant project rationale before answering. Once you have the relevant decisions (or have determined none exist), produce a concise answer that reflects the project's documented choices.";
+
+  const turn1 = await args.agent.decideToolCall({
+    systemPrompt,
+    userMessage: args.question,
+    tools: [args.tool],
+  });
+
+  // No tool call: agent answered directly in turn 1.
+  if (turn1.toolCalls.length === 0) {
+    return {
+      decisions: [],
+      middlewareFired: false,
+      finalAnswer: turn1.text,
+      inputTokens: turn1.inputTokens,
+      outputTokens: turn1.outputTokens,
+      agentAnsweredDirectly: true,
+    };
   }
 
-  // auto-middleware: use entity extraction to surface path-shaped tokens,
-  // then fire the middleware via a bash tool call.
-  const entityQuery = extractEntities(question);
-  const tokens = entityQuery
-    .split(/\s+/)
-    .filter((t) => t.includes('/') || /\.[a-z]+$/i.test(t));
-  const result = await client.invokeMiddleware(tokens);
-  return {
-    decisions: result.injectedDecisions.slice(0, topK),
-    middlewareFired: result.middlewareFired,
+  // Dispatch tool calls (we only honor the first; the agent shouldn't
+  // need parallelism for this workload, and limiting to one keeps the
+  // experimental contract clean).
+  const toolCall = turn1.toolCalls[0];
+  const dispatch = await args.client.dispatchToolCall(toolCall.name, toolCall.arguments);
+
+  // Build the tool result the agent will read in turn 2. For
+  // search_decisions we strip the trailing prose for clarity; for bash
+  // we keep the full content (it's the agent's responsibility to
+  // interpret it). Either way, the agent ALSO sees any
+  // _meta.relevantDecisions via a synthetic appendix.
+  let toolResultContent = cleanSearchToolText(dispatch.contentText);
+  if (dispatch.injectedDecisions.length > 0) {
+    const decisionsBlock = dispatch.injectedDecisions
+      .map((d) => `- ${d.question}\n  ${d.answer}`)
+      .join('\n');
+    toolResultContent +=
+      `\n\n---\nProject decisions linked to this tool call (via Continuity AutoRetrievalMiddleware):\n${decisionsBlock}`;
+  }
+
+  const toolResult: ToolResult = {
+    toolCallId: toolCall.id,
+    content: toolResultContent,
+    isError: dispatch.isError,
   };
+
+  const turn2 = await args.agent.continueWithToolResults({
+    systemPrompt,
+    userMessage: args.question,
+    tools: [args.tool],
+    priorAssistantBlob: turn1.rawAssistantBlob,
+    toolResults: [toolResult],
+  });
+
+  // Aggregate retrieved decisions for reporting. For search_decisions,
+  // parse the structured response. For bash, the relevant decisions are
+  // the middleware-injected ones.
+  let decisions: McpDecision[] = dispatch.injectedDecisions.slice(0, args.topK);
+  if (toolCall.name === 'search_decisions') {
+    decisions = parseSearchToolDecisions(dispatch.contentText, args.topK);
+  }
+
+  return {
+    decisions,
+    middlewareFired: dispatch.injectedDecisions.length > 0,
+    finalAnswer: turn2.text,
+    inputTokens: turn1.inputTokens + turn2.inputTokens,
+    outputTokens: turn1.outputTokens + turn2.outputTokens,
+    agentAnsweredDirectly: false,
+  };
+}
+
+function parseSearchToolDecisions(rawText: string, topK: number): McpDecision[] {
+  // The runner's dispatchToolCall joins all text blocks with `\n`. The
+  // search_decisions response starts with a warning block, then the
+  // JSON-with-trailing-prose block. Scan for the first `{` that opens
+  // a balanced JSON object containing `results`.
+  const firstBraceIdx = rawText.indexOf('{');
+  if (firstBraceIdx < 0) return [];
+  const jsonText = cleanSearchToolText(rawText.slice(firstBraceIdx));
+  if (!jsonText.trim().startsWith('{')) return [];
+  try {
+    const parsed = JSON.parse(jsonText) as {
+      results?: Array<Partial<McpDecision> & { decisionId?: string }>;
+    };
+    return (parsed.results ?? []).slice(0, topK).map((d) => ({
+      id: d.id ?? d.decisionId ?? '',
+      question: d.question ?? '',
+      answer: d.answer ?? '',
+      tags: d.tags ?? [],
+      score: d.score,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 async function loadQuizFile(fixtureName: string): Promise<Array<{ id: string; question: string; groundTruth: string }>> {
@@ -351,7 +603,6 @@ async function main(): Promise<void> {
   const questions = args.questionsPerSession > 0
     ? quiz.slice(0, args.questionsPerSession)
     : quiz;
-  const fixture = loadFixture(args.fixtureName);
 
   console.log(
     `[middleware-replay] fixture=${args.fixtureName} model=${args.modelName} retrieval=${args.retrievalMode} questions=${questions.length} topK=${args.topK}`,
@@ -359,15 +610,26 @@ async function main(): Promise<void> {
   console.log(`[middleware-replay] mcp-server: ${mcpPath}`);
   console.log(`[middleware-replay] workspace: ${workspaceRoot}`);
 
-  const llm = createLLMClient(args.modelName as SupportedModel, {
-    mock: { responder: (prompt, idx) => `[mock-${idx}] ${prompt.slice(-200)}` },
-  });
+  // mcp-search uses the simple LLMClient (single-shot, no tool use). The
+  // two agent-loop modes use ToolCallingAgent.
+  const llm =
+    args.retrievalMode === 'mcp-search'
+      ? createLLMClient(args.modelName as SupportedModel, {
+          mock: { responder: (prompt, idx) => `[mock-${idx}] ${prompt.slice(-200)}` },
+        })
+      : null;
+  const agent =
+    args.retrievalMode === 'mcp-search' ? null : createAgent(args.modelName);
+
   const embedder: Embedder = args.modelName === 'mock' ? new MockEmbedder(64) : new EvalEmbedder();
   await embedder.init();
   const client = await McpClient.spawn({
     mcpServerPath: mcpPath,
     workspaceRoot,
     inheritStderr: args.verbose,
+    // auto-middleware mode requires the server to register the
+    // benchmark-only `bash` tool. CONTINUITY_BENCHMARK_MODE=1 unlocks it.
+    env: args.retrievalMode === 'auto-middleware' ? { CONTINUITY_BENCHMARK_MODE: '1' } : {},
   });
 
   const results: PerQuestionResult[] = [];
@@ -375,24 +637,52 @@ async function main(): Promise<void> {
   let totalOutputTokens = 0;
   let middlewareFires = 0;
 
+  // Tool advertised to the agent. agent-loop uses search_decisions;
+  // auto-middleware uses the benchmark-mode bash tool (gated server-side
+  // on CONTINUITY_BENCHMARK_MODE=1; the server registers a read-only
+  // file-cat handler that triggers AutoRetrievalMiddleware).
+  const agentTool: ToolDef =
+    args.retrievalMode === 'auto-middleware'
+      ? BASH_TOOL
+      : SEARCH_DECISIONS_TOOL;
+
   try {
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
 
-      const { decisions, middlewareFired } = await retrieveForQuestion(
-        client,
-        fixture,
-        q.question,
-        args.retrievalMode,
-        args.topK,
-      );
+      let decisions: McpDecision[] = [];
+      let middlewareFired = false;
+      let answer: string;
+      let inputTokens: number;
+      let outputTokens: number;
+      let agentAnsweredDirectly = false;
 
-      const context = formatDecisionsAsContext(decisions);
-      const { answer, inputTokens, outputTokens } = await answerQuestion(
-        llm,
-        q.question,
-        context,
-      );
+      if (args.retrievalMode === 'mcp-search') {
+        const r = await retrieveForQuestionMcpSearch(client, q.question, args.topK);
+        decisions = r.decisions;
+        middlewareFired = r.middlewareFired;
+        const context = formatDecisionsAsContext(decisions);
+        const a = await answerQuestion(llm!, q.question, context);
+        answer = a.answer;
+        inputTokens = a.inputTokens;
+        outputTokens = a.outputTokens;
+      } else {
+        // agent-loop or auto-middleware: 2-turn agent loop.
+        const outcome = await runAgentLoop({
+          agent: agent!,
+          client,
+          question: q.question,
+          groundTruth: q.groundTruth,
+          tool: agentTool,
+          topK: args.topK,
+        });
+        decisions = outcome.decisions;
+        middlewareFired = outcome.middlewareFired;
+        answer = outcome.finalAnswer;
+        inputTokens = outcome.inputTokens;
+        outputTokens = outcome.outputTokens;
+        agentAnsweredDirectly = outcome.agentAnsweredDirectly;
+      }
 
       const groundTruthEmbedding = await embedder.embed(q.groundTruth);
       const answerEmbedding = await embedder.embed(answer);
@@ -413,8 +703,9 @@ async function main(): Promise<void> {
       if (middlewareFired) middlewareFires++;
 
       if (args.verbose) {
+        const directNote = agentAnsweredDirectly ? ' [agent-direct]' : '';
         console.log(
-          `[middleware-replay] q${i + 1}/${questions.length} ${q.id} → cosine=${cosine.toFixed(3)} retrieved=${decisions.length} middlewareFired=${middlewareFired}`,
+          `[middleware-replay] q${i + 1}/${questions.length} ${q.id} → cosine=${cosine.toFixed(3)} retrieved=${decisions.length} middlewareFired=${middlewareFired}${directNote}`,
         );
       }
     }

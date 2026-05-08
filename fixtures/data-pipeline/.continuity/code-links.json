@@ -1,0 +1,136 @@
+{
+  "_note": "Hand-authored code-links for the auto-middleware benchmark mode. Maps fictional source-file paths to fixture decisions so AutoRetrievalMiddleware can fire on `bash cat <path>` calls. Paths are notional (the fixture has no actual codebase) but the middleware doesn't verify file existence; it only matches paths against link entries.",
+  "links": [
+    {
+      "location": {
+        "filePath": "src/streaming/kafka.ts"
+      },
+      "linkedDecisionIds": [
+        "pipeline-streaming-kafka"
+      ]
+    },
+    {
+      "location": {
+        "filePath": "src/streaming/schema-registry.ts"
+      },
+      "linkedDecisionIds": [
+        "pipeline-schema-registry-confluent",
+        "pipeline-serialization-avro",
+        "pipeline-serialization-protobuf"
+      ]
+    },
+    {
+      "location": {
+        "filePath": "src/streaming/cdc-debezium.ts"
+      },
+      "linkedDecisionIds": [
+        "pipeline-cdc-debezium"
+      ]
+    },
+    {
+      "location": {
+        "filePath": "src/orchestration/dagster_pipeline.py"
+      },
+      "linkedDecisionIds": [
+        "pipeline-batch-dagster",
+        "pipeline-orchestration-k8s"
+      ]
+    },
+    {
+      "location": {
+        "filePath": "warehouse/snowflake/connection.py"
+      },
+      "linkedDecisionIds": [
+        "pipeline-warehouse-snowflake"
+      ]
+    },
+    {
+      "location": {
+        "filePath": "warehouse/dbt/dbt_project.yml"
+      },
+      "linkedDecisionIds": [
+        "pipeline-transforms-dbt"
+      ]
+    },
+    {
+      "location": {
+        "filePath": "src/connectors/airbyte_config.yml"
+      },
+      "linkedDecisionIds": [
+        "pipeline-connectors-airbyte"
+      ]
+    },
+    {
+      "location": {
+        "filePath": "src/storage/s3_parquet.py"
+      },
+      "linkedDecisionIds": [
+        "pipeline-storage-s3-parquet",
+        "pipeline-partitioning-hive"
+      ]
+    },
+    {
+      "location": {
+        "filePath": "src/catalog/glue_setup.py"
+      },
+      "linkedDecisionIds": [
+        "pipeline-catalog-glue"
+      ]
+    },
+    {
+      "location": {
+        "filePath": "src/dq/great_expectations_suite.py"
+      },
+      "linkedDecisionIds": [
+        "pipeline-dq-great-expectations",
+        "pipeline-dq-soda-core"
+      ]
+    },
+    {
+      "location": {
+        "filePath": "src/dq/soda_checks.yml"
+      },
+      "linkedDecisionIds": [
+        "pipeline-dq-soda-core"
+      ]
+    },
+    {
+      "location": {
+        "filePath": "infra/terraform/main.tf"
+      },
+      "linkedDecisionIds": [
+        "pipeline-iac-terraform"
+      ]
+    },
+    {
+      "location": {
+        "filePath": "infra/secrets/asm.tf"
+      },
+      "linkedDecisionIds": [
+        "pipeline-secrets-asm"
+      ]
+    },
+    {
+      "location": {
+        "filePath": "src/pii/tokenize.py"
+      },
+      "linkedDecisionIds": [
+        "pipeline-pii-tokenization"
+      ]
+    },
+    {
+      "location": {
+        "filePath": "pyproject.toml"
+      },
+      "linkedDecisionIds": [
+        "pipeline-language-python-strict"
+      ]
+    }
+  ],
+  "meta": {
+    "backfillVersion": 1,
+    "backfillCompletedAt": "2026-05-08T08:45:32.570Z",
+    "backfillLinksCreated": 0,
+    "backfillDecisionsScanned": 20
+  }
+}
