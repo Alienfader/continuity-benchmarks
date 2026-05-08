@@ -160,6 +160,10 @@ type RetrievalMode = 'mcp-search' | 'auto-middleware' | 'agent-loop';
 
 interface ReplayArgs {
   fixtureName: string;
+  /** Optional: absolute path to a workspace root (overrides fixtures/<name>/). */
+  workspaceOverride?: string;
+  /** Optional: absolute path to a quiz JSON file (overrides prompts/quizzes/<name>.json). */
+  quizOverride?: string;
   modelName: string;
   retrievalMode: RetrievalMode;
   questionsPerSession: number;
@@ -268,6 +272,8 @@ function parseArgs(argv: string[]): ReplayArgs {
 
   return {
     fixtureName,
+    workspaceOverride: get('--workspace'),
+    quizOverride: get('--quiz'),
     modelName,
     retrievalMode: retrievalRaw,
     questionsPerSession: parseInt(get('--questions', '0') ?? '0', 10),
@@ -307,7 +313,17 @@ function resolveMcpPath(): string {
   );
 }
 
-function fixtureWorkspaceRoot(fixtureName: string): string {
+function fixtureWorkspaceRoot(fixtureName: string, override?: string): string {
+  if (override) {
+    const resolved = path.resolve(override);
+    if (!fs.existsSync(path.join(resolved, '.continuity', 'decisions.json'))) {
+      throw new Error(
+        `--workspace ${override} → ${resolved} is not a Continuity workspace ` +
+          `(missing .continuity/decisions.json).`,
+      );
+    }
+    return resolved;
+  }
   // The MCP server treats WORKSPACE_ROOT as the project root and looks for
   // `.continuity/decisions.json` under it. Our fixtures are arranged as
   // `fixtures/<name>/.continuity/decisions.json`, so the workspace root is
@@ -499,51 +515,84 @@ async function runAgentLoop(args: {
     };
   }
 
-  // Dispatch tool calls (we only honor the first; the agent shouldn't
-  // need parallelism for this workload, and limiting to one keeps the
-  // experimental contract clean).
-  const toolCall = turn1.toolCalls[0];
-  const dispatch = await args.client.dispatchToolCall(toolCall.name, toolCall.arguments);
-
-  // Build the tool result the agent will read in turn 2. For
-  // search_decisions we strip the trailing prose for clarity; for bash
-  // we keep the full content (it's the agent's responsibility to
-  // interpret it). Either way, the agent ALSO sees any
-  // _meta.relevantDecisions via a synthetic appendix.
-  let toolResultContent = cleanSearchToolText(dispatch.contentText);
-  if (dispatch.injectedDecisions.length > 0) {
-    const decisionsBlock = dispatch.injectedDecisions
-      .map((d) => `- ${d.question}\n  ${d.answer}`)
-      .join('\n');
-    toolResultContent +=
-      `\n\n---\nProject decisions linked to this tool call (via Continuity AutoRetrievalMiddleware):\n${decisionsBlock}`;
+  // Dispatch ALL tool calls the agent issued. OpenAI's API rejects a
+  // turn-2 messages array unless every tool_call_id from turn 1 has a
+  // matching tool result, so we can't just pick the first. Anthropic
+  // is similarly strict about block ordering. We've also set
+  // parallel_tool_calls: false on OpenAI to encourage single-call
+  // turns, but multi-call turns still need to work.
+  const dispatches: Array<{ call: typeof turn1.toolCalls[0]; result: Awaited<ReturnType<typeof args.client.dispatchToolCall>> }> = [];
+  for (const call of turn1.toolCalls) {
+    const r = await args.client.dispatchToolCall(call.name, call.arguments);
+    dispatches.push({ call, result: r });
   }
 
-  const toolResult: ToolResult = {
-    toolCallId: toolCall.id,
-    content: toolResultContent,
-    isError: dispatch.isError,
-  };
+  // Build per-call tool results for turn 2.
+  //
+  // Format choice (matters for auto-middleware fairness): in production,
+  // AutoRetrievalMiddleware delivers `_meta.relevantDecisions` separately
+  // from the tool's own output — IDEs typically render the metadata as a
+  // distinct context block, not inline with bulk tool output. The text-only
+  // tool_result API forces us to concatenate, so we PREPEND decisions
+  // (high-signal, agent reads first) and TRUNCATE bulk tool output to
+  // 4 KiB (keeps decisions visible vs being buried after a 50 KiB file
+  // dump). Without these adjustments, agents pick up the file contents
+  // as their primary answer source and ignore the injected decisions —
+  // empirically observed to make middleware-fired calls *worse* than
+  // non-fired ones.
+  const TOOL_OUTPUT_CAP = 4096;
+  const toolResults: ToolResult[] = dispatches.map(({ call, result }) => {
+    const sections: string[] = [];
+    if (result.injectedDecisions.length > 0) {
+      const decisionsBlock = result.injectedDecisions
+        .map((d) => `- ${d.question}\n  ${d.answer}`)
+        .join('\n');
+      sections.push(
+        `Project decisions linked to this tool call (via Continuity AutoRetrievalMiddleware):\n${decisionsBlock}`,
+      );
+    }
+    let toolBody = cleanSearchToolText(result.contentText);
+    if (toolBody.length > TOOL_OUTPUT_CAP) {
+      toolBody = toolBody.slice(0, TOOL_OUTPUT_CAP) + '\n\n[…truncated for benchmark; original tool output exceeds 4 KiB]';
+    }
+    sections.push(toolBody);
+    return {
+      toolCallId: call.id,
+      content: sections.join('\n\n---\n\n'),
+      isError: result.isError,
+    };
+  });
 
   const turn2 = await args.agent.continueWithToolResults({
     systemPrompt,
     userMessage: args.question,
     tools: [args.tool],
     priorAssistantBlob: turn1.rawAssistantBlob,
-    toolResults: [toolResult],
+    toolResults,
   });
 
-  // Aggregate retrieved decisions for reporting. For search_decisions,
-  // parse the structured response. For bash, the relevant decisions are
-  // the middleware-injected ones.
-  let decisions: McpDecision[] = dispatch.injectedDecisions.slice(0, args.topK);
-  if (toolCall.name === 'search_decisions') {
-    decisions = parseSearchToolDecisions(dispatch.contentText, args.topK);
+  // Aggregate retrieved decisions for reporting. For search_decisions
+  // calls, parse the structured response from each. For bash calls,
+  // the relevant decisions are the middleware-injected ones. Concat
+  // across all dispatched calls and dedupe by id, then trim to topK.
+  const seen = new Set<string>();
+  const collected: McpDecision[] = [];
+  for (const { call, result } of dispatches) {
+    const fromCall = call.name === 'search_decisions'
+      ? parseSearchToolDecisions(result.contentText, args.topK)
+      : result.injectedDecisions;
+    for (const d of fromCall) {
+      if (!d.id || seen.has(d.id)) continue;
+      seen.add(d.id);
+      collected.push(d);
+    }
   }
+  const decisions = collected.slice(0, args.topK);
 
+  const middlewareFired = dispatches.some((d) => d.result.injectedDecisions.length > 0);
   return {
     decisions,
-    middlewareFired: dispatch.injectedDecisions.length > 0,
+    middlewareFired,
     finalAnswer: turn2.text,
     inputTokens: turn1.inputTokens + turn2.inputTokens,
     outputTokens: turn1.outputTokens + turn2.outputTokens,
@@ -576,8 +625,13 @@ function parseSearchToolDecisions(rawText: string, topK: number): McpDecision[] 
   }
 }
 
-async function loadQuizFile(fixtureName: string): Promise<Array<{ id: string; question: string; groundTruth: string }>> {
-  const quizPath = path.resolve(__dirname, '..', 'prompts', 'quizzes', `${fixtureName}.json`);
+async function loadQuizFile(
+  fixtureName: string,
+  override?: string,
+): Promise<Array<{ id: string; question: string; groundTruth: string }>> {
+  const quizPath = override
+    ? path.resolve(override)
+    : path.resolve(__dirname, '..', 'prompts', 'quizzes', `${fixtureName}.json`);
   if (!fs.existsSync(quizPath)) {
     throw new Error(`Quiz file not found: ${quizPath}`);
   }
@@ -598,8 +652,8 @@ async function main(): Promise<void> {
   const startedAt = Date.now();
 
   const mcpPath = resolveMcpPath();
-  const workspaceRoot = fixtureWorkspaceRoot(args.fixtureName);
-  const quiz = await loadQuizFile(args.fixtureName);
+  const workspaceRoot = fixtureWorkspaceRoot(args.fixtureName, args.workspaceOverride);
+  const quiz = await loadQuizFile(args.fixtureName, args.quizOverride);
   const questions = args.questionsPerSession > 0
     ? quiz.slice(0, args.questionsPerSession)
     : quiz;

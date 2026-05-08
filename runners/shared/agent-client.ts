@@ -139,27 +139,35 @@ export class AnthropicAgent implements ToolCallingAgent {
   }
 
   async continueWithToolResults(args: AgentContinueArgs): Promise<AgentTurnResult> {
+    // Force the model to produce a final text answer in turn 2 by
+    // appending an explicit instruction. We also drop the `tools` array
+    // from this call — without tools advertised, the model has no
+    // choice but to answer in text. (Anthropic doesn't support a
+    // `tool_choice: "none"` analog, so omitting tools is the cleanest
+    // path; the prior turn's tool_use blocks remain valid because they
+    // exist in the assistant message, not in the current request's
+    // tools array.)
+    const closingNudge =
+      "Now produce the final answer based on the tool result above. Do not call additional tools.";
     const response = await this.client.messages.create({
       model: this.modelName,
       max_tokens: args.maxTokens ?? 1024,
       temperature: args.temperature ?? 0.2,
       system: args.systemPrompt,
-      tools: args.tools.map((t) => ({
-        name: t.name,
-        description: t.description,
-        input_schema: t.inputSchema as Anthropic.Messages.Tool.InputSchema,
-      })),
       messages: [
         { role: 'user', content: args.userMessage },
         { role: 'assistant', content: args.priorAssistantBlob as Anthropic.Messages.ContentBlock[] },
         {
           role: 'user',
-          content: args.toolResults.map((r) => ({
-            type: 'tool_result' as const,
-            tool_use_id: r.toolCallId,
-            content: r.content,
-            is_error: r.isError,
-          })),
+          content: [
+            ...args.toolResults.map((r) => ({
+              type: 'tool_result' as const,
+              tool_use_id: r.toolCallId,
+              content: r.content,
+              is_error: r.isError,
+            })),
+            { type: 'text' as const, text: closingNudge },
+          ],
         },
       ],
     });
@@ -238,6 +246,11 @@ export class OpenAIAgent implements ToolCallingAgent {
           parameters: t.inputSchema,
         },
       })),
+      // Force serial tool use. Our 2-turn protocol expects one tool
+      // call per turn 1; multiple parallel tool_calls would require us
+      // to dispatch and respond to ALL of them in turn 2 before the
+      // model will accept the messages array.
+      parallel_tool_calls: false,
       max_tokens: args.maxTokens ?? 1024,
       temperature: args.temperature ?? 0.2,
     };
@@ -262,6 +275,13 @@ export class OpenAIAgent implements ToolCallingAgent {
 
   async continueWithToolResults(args: AgentContinueArgs): Promise<AgentTurnResult> {
     const priorMsg = args.priorAssistantBlob as OpenAIChatChoice['message'];
+    // Force a final text answer in turn 2: tool_choice=none disables
+    // additional tool calls, and an inline nudge in the trailing user
+    // message tells the model to answer based on the tool result. We
+    // still pass `tools` because some OpenAI models reject
+    // tool_choice=none without it.
+    const closingNudge =
+      "Now produce the final answer based on the tool result above. Do not call additional tools.";
     const body = {
       model: this.modelName,
       messages: [
@@ -273,6 +293,7 @@ export class OpenAIAgent implements ToolCallingAgent {
           tool_call_id: r.toolCallId,
           content: r.content,
         })),
+        { role: 'user', content: closingNudge },
       ],
       tools: args.tools.map((t) => ({
         type: 'function' as const,
@@ -282,6 +303,7 @@ export class OpenAIAgent implements ToolCallingAgent {
           parameters: t.inputSchema,
         },
       })),
+      tool_choice: 'none' as const,
       max_tokens: args.maxTokens ?? 1024,
       temperature: args.temperature ?? 0.2,
     };
