@@ -57,13 +57,18 @@ npm run analyze:v2
 | `fixtures/paydash-api/` | Sanitized fictional Express+Postgres project with 19 architectural decisions in `.continuity/decisions.json`. The benchmark target. |
 | `prompts/quizzes/paydash-api.json` | 20 recall-quiz questions paired with ground-truth answers, used by `recall-over-time`. |
 | `prompts/quizzes/{ml-platform,mobile-app,data-pipeline,infra-platform}.json` | Four extra fixtures for cross-domain extension (no raw outputs in this release). |
-| `runners/recall-over-time.ts` | 7-session multi-turn drift benchmark, mirrors the ID-RAG identity-recall protocol. |
+| `runners/recall-over-time.ts` | 7-session multi-turn drift benchmark, mirrors the ID-RAG identity-recall protocol. Wires the 4-condition v2 matrix (`baseline`, `continuity-blanket`, `continuity-perq-frontloaded`, `continuity-in-loop`). |
 | `runners/action-alignment.ts` | 30 prompts × 3 conditions; LLM-as-a-judge scores proposed actions 1–10. |
 | `runners/convergence-time.ts` | Time-to-completion benchmark for fixed multi-step refactor tasks. |
-| `runners/re-judge.py` | Cross-validates saved action-alignment scores using Gemini-2.5-flash; emits Cohen's κ + Spearman ρ. |
-| `runners/shared/` | LLM provider clients, BM25 + RRF retrieval, cosine eval embeddings, noise generator. |
-| `reports/id-rag-parity/` | All 11 successful per-run JSON outputs (paydash × {gpt-4o, gpt-4o-mini} × 3 runs × 2 runners). |
-| `reports/id-rag-parity/inter-judge.json` | 540 blinded Sonnet–Gemini score pairs with κ + ρ statistics. |
+| `runners/head-to-head.ts` | Continuity-vs-MemPalace 50-query benchmark (§4.3 of the white paper). Imports `@continuity/core`'s `SemanticSearchService`, which is closed-source — see file header for the dependency note + how to swap in your own retrieval engine. Saved per-query results are at `reports/head-to-head-*.json`. |
+| `runners/middleware-replay.ts` | **Skeleton** for the `continuity-mcp-middleware` condition — end-to-end replay through the production MCP server's tool-call middleware. Documents the design + status; the MCP-client wiring is intentionally a placeholder. Closing the gap between the simulated `continuity-in-loop` and the production delivery shape is tracked under `benchmarks/EVAL_PLAN.md`. |
+| `runners/re-judge.py` | Cross-validates saved paydash action-alignment scores using Gemini-2.5-flash; emits Cohen's κ + Spearman ρ. |
+| `runners/re-judge-cross-corpus.py` | Same but for the v2 cross-corpus matrix (n=1,080 paired scores). |
+| `runners/bootstrap-ci.py` | BCa (bias-corrected and accelerated) bootstrap 95% CIs on Cohen's d for every contrast in the v2 matrix; 10,000 resamples. Outputs `reports/id-rag-parity-v2/bootstrap-ci.json`. |
+| `runners/experimental-gaps-analysis-v2.py` | Paired Wilcoxon signed-rank tests and Cohen's d for the v2 matrix. |
+| `runners/shared/` | LLM provider clients, BM25 retrieval + entity-extraction key, cosine eval embeddings, noise generator. |
+| `reports/id-rag-parity/` | All 11 successful per-run JSON outputs (paydash × {gpt-4o, gpt-4o-mini} × 3 runs × 2 runners) + the 540-pair Sonnet-vs-Gemini inter-judge JSON. |
+| `reports/id-rag-parity-v2/` | v2 cross-corpus 24-cell matrix (data-pipeline + mobile-app × {gpt-4o, claude-sonnet-4-6} × 3 runs × 4 conditions), the M2-ablation analysis, the 1,080-pair cross-corpus inter-judge JSON, and `bootstrap-ci.json` (BCa CIs on Cohen's d). |
 | `reports/id-rag-parity-summary.md` | Synthesized findings, methodology, comparison with ID-RAG. |
 
 ---
@@ -88,8 +93,21 @@ For 30 proposed-action prompts × 3 conditions:
 ### Conditions explained
 
 - **`baseline`** — agent has no project context in its prompt
-- **`continuity`** — top-K relevant decisions retrieved once and prepended to the prompt
-- **`continuity-in-loop`** — same retrieval, plus a second augmentation pass using the top decision's tags (simulates `AutoRetrievalMiddleware`'s "re-fire with context" behavior)
+- **`continuity`** — top-K decisions retrieved once on the full prompt as the seed query, prepended to the agent prompt (single-shot, full-prompt-keyed retrieval — the "passive RAG" condition)
+- **`continuity-blanket`** *(recall-over-time only)* — top-K retrieved once using the concatenation of all 20 quiz-question stems as the seed; the same blob is prepended to every session
+- **`continuity-perq-frontloaded`** *(recall-over-time only, M2-ablation comparand)* — per-question retrieval computed ONCE at session 1, the same 20 question-specific blobs re-injected unchanged at every session boundary
+- **`continuity-in-loop`** — retrieval keyed on **entities extracted from the prompt** (file paths, capitalized identifiers, tech terms — see `runners/shared/retrieval.ts::extractEntities`). For action-alignment this is single-shot entity-keyed retrieval; for recall-over-time the per-question retrieval is re-fired FRESH at every session boundary
+
+**What the in-loop runner actually does vs. the production middleware:**
+
+| Step | Production middleware (`AutoRetrievalMiddleware`) | Public `continuity-in-loop` runner |
+|---|---|---|
+| Trigger | Agent issues `Bash`/`Edit`/`Write` tool call | Runner receives the prompt for a quiz question |
+| Key extraction | Pulls file paths + entities from tool-call **arguments** | Pulls file paths + entities from the **prompt text** (`extractEntities`) |
+| Retrieval | Queries decision store on extracted keys | BM25 over decision Q+A+tags on extracted keys |
+| Delivery | Injects matched decisions into tool result `_meta.relevantDecisions` | Prepends matched decisions to the agent prompt |
+
+The runner faithfully simulates the **retrieval-keying logic** of the middleware (entity extraction → query → top-K decisions). It does **not** exercise the **tool-call interception delivery mechanism** (prompt-prepend vs `_meta`-inject is a real distinction the public benchmark does not currently isolate). The §4.7 timing-ablation conclusions in the white paper therefore apply to entity-keyed retrieval delivered via prompt-prepend; production-middleware delivery is future work, scaffolded under `runners/middleware-replay.ts` (skeleton in this release; not yet run end-to-end).
 
 ---
 
@@ -143,9 +161,9 @@ The lift we observe is **of comparable magnitude** to ID-RAG's reported lift, on
 ## What's NOT in this repo
 
 - The Continuity VS Code extension itself — see [hackerware.continuity-ultimate on the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=hackerware.continuity-ultimate).
-- The `AutoRetrievalMiddleware` implementation — this repo measures the architectural pattern, not the specific middleware. The runners' `continuity-in-loop` condition is a faithful behavioral simulation (re-fire retrieval with augmented context).
-- Any proprietary decision data from real projects. Only the sanitized fictional `paydash-api` fixture is here.
-- The `head-to-head.ts` MemPalace comparison — depends on `@continuity/core`'s `SemanticSearchService`. May be vendored in a follow-up release.
+- The production `AutoRetrievalMiddleware` source itself. This repo's `continuity-in-loop` runner faithfully simulates the middleware's **retrieval-keying logic** (entity extraction → query → top-K decisions) but delivers the matched decisions by prompt-prepend rather than by injecting into tool-result `_meta.relevantDecisions`. See "What the in-loop runner actually does vs. the production middleware" above for the precise gap. The skeleton runner `runners/middleware-replay.ts` is published as a starting point for closing this gap; end-to-end implementation is tracked in `EVAL_PLAN.md`.
+- Any proprietary decision data from real projects. Only the sanitized fictional fixtures are here.
+- A working `@continuity/core` install. `runners/head-to-head.ts` is vendored as a reference implementation but `npm install` does not include the closed-source `@continuity/core` package; see the file's header note for how to swap in your own retrieval engine.
 
 ---
 

@@ -15,6 +15,9 @@
     "bench:matrix-v2": "bash scripts/run-id-rag-parity-v2.sh",
     "bench:matrix-v2-resume": "bash scripts/run-id-rag-parity-v2-resume.sh",
     "analyze:v2": "python3 runners/experimental-gaps-analysis-v2.py",
+    "bootstrap:ci": "python3 runners/bootstrap-ci.py",
+    "bench:head-to-head": "tsx runners/head-to-head.ts",
+    "bench:middleware-replay": "tsx runners/middleware-replay.ts",
     "rejudge:paydash": "python3 runners/re-judge.py",
     "rejudge:cross-corpus": "python3 runners/re-judge-cross-corpus.py"
   },
