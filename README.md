@@ -61,7 +61,8 @@ npm run analyze:v2
 | `runners/action-alignment.ts` | 30 prompts × 3 conditions; LLM-as-a-judge scores proposed actions 1–10. |
 | `runners/convergence-time.ts` | Time-to-completion benchmark for fixed multi-step refactor tasks. |
 | `runners/head-to-head.ts` | Continuity-vs-MemPalace 50-query benchmark (§4.3 of the white paper). Imports `@continuity/core`'s `SemanticSearchService`, which is closed-source — see file header for the dependency note + how to swap in your own retrieval engine. Saved per-query results are at `reports/head-to-head-*.json`. |
-| `runners/middleware-replay.ts` | **Skeleton** for the `continuity-mcp-middleware` condition — end-to-end replay through the production MCP server's tool-call middleware. Documents the design + status; the MCP-client wiring is intentionally a placeholder. Closing the gap between the simulated `continuity-in-loop` and the production delivery shape is tracked under `benchmarks/EVAL_PLAN.md`. |
+| `runners/middleware-replay.ts` | `continuity-mcp-middleware` runner — end-to-end replay through the production Continuity MCP server. Two retrieval modes: `mcp-search` (calls the production `search_decisions` tool, exercising the real `SemanticSearchService` RRF ranker) and `auto-middleware` (fires `AutoRetrievalMiddleware` via a `bash` tool call; requires `code-links.json` in the workspace, no-ops on fixtures without it). Set `CONTINUITY_MCP_PATH` to your local MCP server bundle. Smoke: `npm run test:smoke-middleware-replay`. |
+| `runners/shared/mcp-client.ts` | MCP client wiring for `middleware-replay.ts` — spawns the production server as a stdio subprocess, calls `search_decisions` and `bash`, parses tool-result `_meta.relevantDecisions` payload. |
 | `runners/re-judge.py` | Cross-validates saved paydash action-alignment scores using Gemini-2.5-flash; emits Cohen's κ + Spearman ρ. |
 | `runners/re-judge-cross-corpus.py` | Same but for the v2 cross-corpus matrix (n=1,080 paired scores). |
 | `runners/bootstrap-ci.py` | BCa (bias-corrected and accelerated) bootstrap 95% CIs on Cohen's d for every contrast in the v2 matrix; 10,000 resamples. Outputs `reports/id-rag-parity-v2/bootstrap-ci.json`. |
@@ -107,7 +108,14 @@ For 30 proposed-action prompts × 3 conditions:
 | Retrieval | Queries decision store on extracted keys | BM25 over decision Q+A+tags on extracted keys |
 | Delivery | Injects matched decisions into tool result `_meta.relevantDecisions` | Prepends matched decisions to the agent prompt |
 
-The runner faithfully simulates the **retrieval-keying logic** of the middleware (entity extraction → query → top-K decisions). It does **not** exercise the **tool-call interception delivery mechanism** (prompt-prepend vs `_meta`-inject is a real distinction the public benchmark does not currently isolate). The §4.7 timing-ablation conclusions in the white paper therefore apply to entity-keyed retrieval delivered via prompt-prepend; production-middleware delivery is future work, scaffolded under `runners/middleware-replay.ts` (skeleton in this release; not yet run end-to-end).
+The runner faithfully simulates the **retrieval-keying logic** of the middleware (entity extraction → query → top-K decisions). It does **not** exercise the **tool-call interception delivery mechanism** (prompt-prepend vs `_meta`-inject is a real distinction the public benchmark does not currently isolate). The §4.7 timing-ablation conclusions in the white paper therefore apply to entity-keyed retrieval delivered via prompt-prepend.
+
+Production-middleware delivery is implemented end-to-end in `runners/middleware-replay.ts` (smoke-tests pass against the production MCP server). To run it: set `CONTINUITY_MCP_PATH=/path/to/packages/mcp-server/dist/index.js` and invoke `npm run bench:middleware-replay -- --fixture <name> --model <name> --retrieval=mcp-search --output reports/<dir>`. Two retrieval modes are supported:
+
+- `--retrieval=mcp-search` — calls the production `search_decisions` MCP tool, exercising the real `SemanticSearchService` RRF hybrid ranker (semantic + keyword + tags). Works on any fixture.
+- `--retrieval=auto-middleware` — fires the production `AutoRetrievalMiddleware` via a `bash` tool call; requires `code-links.json` in the workspace. The public fixtures intentionally ship without code-links (decisions reference systems by name, not file paths), so this mode no-ops on them — that's the honest production-replay result given the fixture shape, and is itself a useful experimental data point.
+
+Populating a `continuity-mcp-middleware` row in the v2 matrix would cost ~$30–50 in API spend; doing so is the next pre-registered protocol expansion.
 
 ---
 
@@ -161,7 +169,7 @@ The lift we observe is **of comparable magnitude** to ID-RAG's reported lift, on
 ## What's NOT in this repo
 
 - The Continuity VS Code extension itself — see [hackerware.continuity-ultimate on the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=hackerware.continuity-ultimate).
-- The production `AutoRetrievalMiddleware` source itself. This repo's `continuity-in-loop` runner faithfully simulates the middleware's **retrieval-keying logic** (entity extraction → query → top-K decisions) but delivers the matched decisions by prompt-prepend rather than by injecting into tool-result `_meta.relevantDecisions`. See "What the in-loop runner actually does vs. the production middleware" above for the precise gap. The skeleton runner `runners/middleware-replay.ts` is published as a starting point for closing this gap; end-to-end implementation is tracked in `EVAL_PLAN.md`.
+- The production `AutoRetrievalMiddleware` source itself. This repo's `continuity-in-loop` runner faithfully simulates the middleware's **retrieval-keying logic** (entity extraction → query → top-K decisions) but delivers the matched decisions by prompt-prepend rather than by injecting into tool-result `_meta.relevantDecisions`. The end-to-end production-middleware replay is implemented in `runners/middleware-replay.ts` (calls the production MCP server's `search_decisions` and/or `bash` tools through the real stdio transport) — set `CONTINUITY_MCP_PATH` to a local clone of the commercial workspace to use it.
 - Any proprietary decision data from real projects. Only the sanitized fictional fixtures are here.
 - A working `@continuity/core` install. `runners/head-to-head.ts` is vendored as a reference implementation but `npm install` does not include the closed-source `@continuity/core` package; see the file's header note for how to swap in your own retrieval engine.
 

@@ -18,11 +18,13 @@
     "bootstrap:ci": "python3 runners/bootstrap-ci.py",
     "bench:head-to-head": "tsx runners/head-to-head.ts",
     "bench:middleware-replay": "tsx runners/middleware-replay.ts",
+    "test:smoke-middleware-replay": "tsx runners/middleware-replay.ts --fixture data-pipeline --model mock --questions 2 --retrieval=mcp-search --output /tmp/smoke-mw-replay",
     "rejudge:paydash": "python3 runners/re-judge.py",
     "rejudge:cross-corpus": "python3 runners/re-judge-cross-corpus.py"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@xenova/transformers": "^2.17.2",
     "dotenv": "^17.2.3",
     "tiktoken": "^1.0.22",

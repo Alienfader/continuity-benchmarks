@@ -42,6 +42,7 @@ import 'dotenv/config';
 // See the DEPENDENCY NOTE above — this resolves only inside the
 // commercial workspace; replace with your own retrieval impl to run
 // this benchmark against an alternative system.
+// @ts-expect-error — closed-source package not in this repo's dependency graph; documented in DEPENDENCY NOTE
 import { SemanticSearchService } from '@continuity/core';
 
 const PROJECT_DIR = path.resolve(__dirname, '../../..');
