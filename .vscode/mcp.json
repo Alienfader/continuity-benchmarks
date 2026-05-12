@@ -1,0 +1,15 @@
+{
+  "servers": {
+    "continuity": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "c:\\Users\\Alienfader\\.vscode\\extensions\\hackerware.continuity-ultimate-3.0.4\\packages\\mcp-server\\dist\\index.js"
+      ],
+      "env": {
+        "CONTINUITY_MAX_INJECTIONS_PER_CATEGORY": "3",
+        "CONTINUITY_INJECTION_COOLDOWN_MS": "180000"
+      }
+    }
+  }
+}
