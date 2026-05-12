@@ -15,11 +15,11 @@ set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-if [ -f benchmarks/.env ]; then
-  set -a; source benchmarks/.env; set +a
+if [ -f .env ]; then
+  set -a; source .env; set +a
 fi
 
-REPORTS=benchmarks/reports/id-rag-parity-v2
+REPORTS=reports/id-rag-parity-v2
 LOG=$REPORTS/resume.log
 mkdir -p "$REPORTS"
 : > "$LOG"
@@ -73,7 +73,7 @@ for target in "${TARGETS[@]}"; do
 
   log "[$i/$TOTAL] $runner fixture=$fixture model=$model run=$run conditions=$conditions"
 
-  npx tsx "verification/shared/id-rag-parallel/runners/${runner}.ts" \
+  npx tsx "runners/${runner}.ts" \
     --fixture "$fixture" \
     --model "$model" \
     --seed "$run" \
