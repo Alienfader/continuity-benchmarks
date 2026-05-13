@@ -25,22 +25,8 @@ import json, math
 from pathlib import Path
 from collections import defaultdict
 
-# Dual-layout path resolution: works in both continuity-ultimate (private)
-# and continuity-benchmarks (public) repos. See runners/shared/fixtures.ts
-# for the equivalent JS helper.
-def _resolve(candidates):
-    for c in candidates:
-        if c.exists():
-            return c
-    return candidates[0]
-
 _HERE = Path(__file__).resolve().parent
-ROOT = _resolve([
-    # (a) continuity-ultimate: runners/ at verification/shared/id-rag-parallel/
-    _HERE.parents[3] / "benchmarks" / "reports" / "id-rag-parity-v2",
-    # (b) continuity-benchmarks public: runners/ at top level
-    _HERE.parent / "reports" / "id-rag-parity-v2",
-])
+ROOT = _HERE.parent / "reports" / "id-rag-parity-v2"
 
 FIXTURES = ["data-pipeline", "mobile-app"]
 MODELS = ["gpt-4o", "claude-sonnet-4-6"]

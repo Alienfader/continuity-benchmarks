@@ -378,7 +378,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   const embedder: Embedder = useMock ? new MockEmbedder(64) : new EvalEmbedder();
 
   console.log(
-    `[recall-over-time] fixture=${fixture.name} source=${fixture.source} decisions=${fixture.decisions.length} model=${client.getModelName()} conditions=${args.conditions.join(',')}`,
+    `[recall-over-time] fixture=${fixture.name} decisions=${fixture.decisions.length} model=${client.getModelName()} conditions=${args.conditions.join(',')}`,
   );
 
   const conditionReports: ConditionReport[] = [];

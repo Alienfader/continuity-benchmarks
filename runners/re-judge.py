@@ -18,35 +18,25 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-def _resolve(candidates):
-    for c in candidates:
-        if c.exists():
-            return c
-    return candidates[0]
-
 _HERE = Path(__file__).resolve().parent
-REPORTS_ROOT = _resolve([
-    _HERE.parents[3] / "benchmarks" / "reports" / "id-rag-parity",  # continuity-ultimate
-    _HERE.parent / "reports" / "id-rag-parity",                     # continuity-benchmarks
-])
-ENV = _resolve([
-    _HERE.parents[3] / "benchmarks" / ".env",                       # continuity-ultimate
-    _HERE.parent / ".env",                                          # continuity-benchmarks
-])
+REPO = _HERE.parent
+REPORTS_ROOT = REPO / "reports" / "id-rag-parity"
+ENV = REPO / ".env"
 OUT = REPORTS_ROOT / "inter-judge.json"
 
 # ── Load .env ────────────────────────────────────────────────────────────────
 env = {}
-for line in ENV.read_text().splitlines():
-    m = re.match(r"^([A-Z_]+)=(.+)$", line.strip())
-    if m:
-        env[m.group(1)] = m.group(2)
+if ENV.exists():
+    for line in ENV.read_text().splitlines():
+        m = re.match(r"^([A-Z_]+)=(.+)$", line.strip())
+        if m:
+            env[m.group(1)] = m.group(2)
 GOOGLE_API_KEY = env.get("GOOGLE_API_KEY") or os.environ.get("GOOGLE_API_KEY")
 if not GOOGLE_API_KEY:
-    raise SystemExit("GOOGLE_API_KEY missing — set in benchmarks/.env")
+    raise SystemExit("GOOGLE_API_KEY missing — set in .env")
 
 # ── Load fixture decisions once ──────────────────────────────────────────────
-FIXTURE_DECISIONS_PATH = REPO / "demo-projects/peer-review/with-continuity/.continuity/decisions.json"
+FIXTURE_DECISIONS_PATH = REPO / "fixtures" / "paydash-api" / ".continuity" / "decisions.json"
 decisions = json.loads(FIXTURE_DECISIONS_PATH.read_text())
 if not isinstance(decisions, list):
     decisions = decisions.get("decisions", [])

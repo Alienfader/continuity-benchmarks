@@ -23,17 +23,8 @@ import json, math
 from pathlib import Path
 from collections import defaultdict
 
-def _resolve(candidates):
-    for c in candidates:
-        if c.exists():
-            return c
-    return candidates[0]
-
 _HERE = Path(__file__).resolve().parent
-ROOT = _resolve([
-    _HERE.parents[3] / "benchmarks" / "reports" / "id-rag-parity",       # continuity-ultimate
-    _HERE.parent / "reports" / "id-rag-parity",                          # continuity-benchmarks
-])
+ROOT = _HERE.parent / "reports" / "id-rag-parity"
 
 FIXTURES = ["data-pipeline", "mobile-app"]
 MODELS = ["gpt-4o", "claude-sonnet-4-6"]

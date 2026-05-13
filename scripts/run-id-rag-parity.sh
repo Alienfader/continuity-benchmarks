@@ -15,9 +15,7 @@
 # scratch, invoke with `FORCE=1 scripts/run-id-rag-parity.sh` or delete
 # the target cells under reports/id-rag-parity/ first.
 #
-# Runtime: tsx (installed as devDependency). Source files live in
-# verification/shared/id-rag-parallel/runners/ — moved there during a
-# repo refactor; the previous benchmarks/src/ path is no longer present.
+# Runtime: tsx (installed as devDependency).
 #
 set -uo pipefail   # NOT -e: we want to continue past any single-invocation failure
 

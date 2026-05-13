@@ -24,19 +24,12 @@ Run:
 import os, re, sys, json, glob, time, math, subprocess, tempfile, argparse
 from pathlib import Path
 
-def _resolve(candidates):
-    for c in candidates:
-        if c.exists():
-            return c
-    return candidates[0]
-
 _HERE = Path(__file__).resolve().parent
 REPO = _HERE.parent
 
-# CLI override — `--reports-root <path>` lets us target the v2 outputs
-# without editing the resolution candidates. ENV var fallback for
-# scripted invocations. Either form, when set, completely replaces the
-# default v1-id-rag-parity resolution path.
+# CLI override — `--reports-root <path>` lets you target a non-default
+# reports directory (e.g., reports/id-rag-parity-v2 for the v2 matrix).
+# Defaults to reports/id-rag-parity in the repo root.
 _parser = argparse.ArgumentParser(add_help=False)
 _parser.add_argument("--reports-root", dest="reports_root", default=None)
 _args, _unknown = _parser.parse_known_args()
@@ -48,22 +41,13 @@ if _REPORTS_ROOT_OVERRIDE:
     if not REPORTS_ROOT.exists():
         raise SystemExit(f"--reports-root {_REPORTS_ROOT_OVERRIDE} does not exist")
 else:
-    REPORTS_ROOT = _resolve([
-        _HERE.parents[3] / "benchmarks" / "reports" / "id-rag-parity",  # continuity-ultimate
-        _HERE.parent / "reports" / "id-rag-parity",                     # continuity-benchmarks
-    ])
-ENV = _resolve([
-    _HERE.parents[3] / "benchmarks" / ".env",                       # continuity-ultimate (in-tree)
-    _HERE.parent / ".env",                                          # continuity-benchmarks
-    _HERE.parents[1] / "continuity-ultimate" / "benchmarks" / ".env",  # sibling continuity-ultimate
-])
+    REPORTS_ROOT = REPO / "reports" / "id-rag-parity"
+
+ENV = REPO / ".env"
 OUT = REPORTS_ROOT / "inter-judge-cross-corpus.json"
 CHECKPOINT = OUT.with_suffix(".checkpoint.json")
 CHECKPOINT_EVERY = 50
-FIXTURES_ROOT = _resolve([
-    _HERE.parents[3] / "verification" / "shared" / "id-rag-parallel" / "fixtures",  # continuity-ultimate
-    _HERE.parent / "fixtures",                                                       # continuity-benchmarks
-])
+FIXTURES_ROOT = REPO / "fixtures"
 
 # Limit which action-alignment.json files we re-judge — only the
 # §4.7 cross-corpus matrix (data-pipeline + mobile-app), not paydash-api.
@@ -71,13 +55,14 @@ SCOPE_FIXTURES = {"data-pipeline", "mobile-app"}
 
 # ── Load .env ────────────────────────────────────────────────────────────────
 env = {}
-for line in ENV.read_text().splitlines():
-    m = re.match(r"^([A-Z_]+)=(.+)$", line.strip())
-    if m:
-        env[m.group(1)] = m.group(2)
+if ENV.exists():
+    for line in ENV.read_text().splitlines():
+        m = re.match(r"^([A-Z_]+)=(.+)$", line.strip())
+        if m:
+            env[m.group(1)] = m.group(2)
 GOOGLE_API_KEY = env.get("GOOGLE_API_KEY") or os.environ.get("GOOGLE_API_KEY")
 if not GOOGLE_API_KEY:
-    raise SystemExit("GOOGLE_API_KEY missing — set in benchmarks/.env")
+    raise SystemExit("GOOGLE_API_KEY missing — set in .env")
 
 # ── Load decisions for every in-scope fixture ────────────────────────────────
 def load_decisions(fixture_name):
