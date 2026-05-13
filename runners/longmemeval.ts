@@ -145,7 +145,9 @@ async function geminiCall(prompt: string, opts: { model: string; maxRetries?: nu
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: { temperature: 0.0, maxOutputTokens: 1024 },
   };
-  const maxRetries = opts.maxRetries ?? 3;
+  // Free tier limit is 15 RPM on gemini-2.5-flash — be generous with retry
+  // backoff so transient 429s recover instead of dropping records.
+  const maxRetries = opts.maxRetries ?? 6;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const resp = await fetch(url, {
@@ -156,7 +158,8 @@ async function geminiCall(prompt: string, opts: { model: string; maxRetries?: nu
       if (!resp.ok) {
         const errText = await resp.text();
         if (resp.status === 429 || resp.status >= 500) {
-          await sleep(2000 * (attempt + 1));
+          // 5s, 10s, 15s, 20s, 25s, 30s — exponential-ish backoff for rate limits
+          await sleep(5000 * (attempt + 1));
           continue;
         }
         throw new Error(`Gemini ${resp.status}: ${errText.slice(0, 200)}`);
@@ -166,7 +169,7 @@ async function geminiCall(prompt: string, opts: { model: string; maxRetries?: nu
       return text;
     } catch (e) {
       if (attempt === maxRetries - 1) throw e;
-      await sleep(2000 * (attempt + 1));
+      await sleep(5000 * (attempt + 1));
     }
   }
   throw new Error('gemini call exhausted retries');
@@ -281,6 +284,7 @@ async function main() {
       let agentResp = '';
       let judgeRaw = '';
       let judgeRes = { label: 0 as 0 | 1, reasoning: '', ok: false };
+      let failed = false;
       try {
         agentResp = await geminiCall(ap, { model: args.model });
         await sleep(args.sleepMs);
@@ -288,7 +292,13 @@ async function main() {
         judgeRes = parseJudge(judgeRaw);
       } catch (e) {
         const err = e instanceof Error ? e.message : String(e);
-        console.log(`  ! error on ${key}: ${err.slice(0, 120)}`);
+        console.log(`  ! error on ${key}: ${err.slice(0, 120)} (will retry on resume)`);
+        failed = true;
+      }
+
+      if (failed) {
+        // Don't record this unit; leave it unfinished so a re-run picks it up.
+        continue;
       }
 
       results.push({
