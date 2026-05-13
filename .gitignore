@@ -3,6 +3,7 @@ node_modules/
 .env.*
 !.env.example
 reports/tmp/
+reports/**/*.checkpoint.json
 # middleware-replay pilot outputs are workspace-specific and one-off
 reports/middleware-pilot/
 *.log

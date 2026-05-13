@@ -58,6 +58,8 @@ ENV = _resolve([
     _HERE.parents[1] / "continuity-ultimate" / "benchmarks" / ".env",  # sibling continuity-ultimate
 ])
 OUT = REPORTS_ROOT / "inter-judge-cross-corpus.json"
+CHECKPOINT = OUT.with_suffix(".checkpoint.json")
+CHECKPOINT_EVERY = 50
 FIXTURES_ROOT = _resolve([
     _HERE.parents[3] / "verification" / "shared" / "id-rag-parallel" / "fixtures",  # continuity-ultimate
     _HERE.parent / "fixtures",                                                       # continuity-benchmarks
@@ -190,7 +192,15 @@ for f in files:
     total_records += len(doc.get("results", []))
 print(f"[re-judge-cross-corpus] total records to re-judge: {total_records}")
 
-pairs = []
+if CHECKPOINT.exists():
+    ck = json.loads(CHECKPOINT.read_text())
+    pairs = ck.get("pairs", [])
+    done_keys = {(p["file"], p["condition"], p["actionId"]) for p in pairs}
+    print(f"[re-judge-cross-corpus] resuming from checkpoint: {len(pairs)} records already done")
+else:
+    pairs = []
+    done_keys = set()
+
 done = 0
 start = time.time()
 for f in files:
@@ -199,12 +209,15 @@ for f in files:
     if fixture not in DECISIONS_BY_FIXTURE:
         print(f"  ! unknown fixture {fixture} in {f}; skipping")
         continue
+    f_rel = str(Path(f).relative_to(REPO))
     for r in doc.get("results", []):
         done += 1
+        if (f_rel, r["condition"], r["actionId"]) in done_keys:
+            continue
         p = judge_prompt(fixture, r["prompt"], r["proposedAction"], r["condition"])
         g = call_gemini(p)
         pairs.append({
-            "file": str(Path(f).relative_to(REPO)),
+            "file": f_rel,
             "fixture": fixture,
             "model": doc["model"],
             "condition": r["condition"],
@@ -215,6 +228,8 @@ for f in files:
             "gemini_reasoning": g["reasoning"][:300],
             "gemini_parse_ok": g["raw_ok"],
         })
+        if len(pairs) % CHECKPOINT_EVERY == 0:
+            CHECKPOINT.write_text(json.dumps({"pairs": pairs}, indent=2))
         # Log every record for the first 5, then every 25 thereafter.
         # First-5 verbose helps debug initial-call hangs; the steady-state
         # cadence of 25 keeps the log compact.
@@ -235,6 +250,7 @@ OUT.write_text(json.dumps({
     "caveat": "Gemini saw the full fixture decisions; Sonnet saw top-K retrieved. Same actions, slightly different judging context — same caveat as inter-judge.json.",
     "pairs": pairs,
 }, indent=2))
+CHECKPOINT.unlink(missing_ok=True)
 print(f"[re-judge-cross-corpus] wrote {OUT}")
 
 # ── Stats ────────────────────────────────────────────────────────────────────
