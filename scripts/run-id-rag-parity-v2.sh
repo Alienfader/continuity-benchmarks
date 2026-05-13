@@ -29,6 +29,11 @@
 #
 #   5. Wall time: ~14h sequentially.
 #
+# Overwrite guard: cells whose output JSON already exists are skipped by
+# default to protect prior 14h-matrix data. To re-run a populated matrix
+# from scratch, invoke with `FORCE=1 scripts/run-id-rag-parity-v2.sh` or
+# delete the target cells under reports/id-rag-parity-v2/ first.
+#
 # Runtime: tsx (installed as devDependency).
 #
 set -uo pipefail   # NOT -e: continue past any single-invocation failure
@@ -61,7 +66,15 @@ log "matrix v2 start — $TOTAL invocations planned"
 log "  recall conditions:    $RECALL_CONDITIONS"
 log "  alignment conditions: $ALIGNMENT_CONDITIONS"
 
+FORCE="${FORCE:-0}"
+if [ "$FORCE" = "1" ]; then
+  log "FORCE=1 set — existing cells WILL be overwritten"
+else
+  log "overwrite guard active — existing cells will be skipped (set FORCE=1 to re-run)"
+fi
+
 i=0
+skipped=0
 for fixture in "${FIXTURES[@]}"; do
   for model in "${MODELS[@]}"; do
     for run in "${RUNS[@]}"; do
@@ -69,6 +82,13 @@ for fixture in "${FIXTURES[@]}"; do
         i=$((i+1))
         outdir="$REPORTS/$fixture/${model//\//_}/run-$run"
         mkdir -p "$outdir"
+        outjson="$outdir/${runner}.json"
+
+        if [ -f "$outjson" ] && [ "$FORCE" != "1" ]; then
+          log "[$i/$TOTAL] $runner $fixture/$model/run-$run — output exists, skipping (set FORCE=1 to overwrite)"
+          skipped=$((skipped+1))
+          continue
+        fi
 
         if [ "$runner" = "recall-over-time" ]; then
           conditions="$RECALL_CONDITIONS"
@@ -97,4 +117,4 @@ for fixture in "${FIXTURES[@]}"; do
   done
 done
 
-log "matrix v2 complete — see $REPORTS for per-fixture results"
+log "matrix v2 complete — skipped=$skipped of $TOTAL — see $REPORTS for per-fixture results"

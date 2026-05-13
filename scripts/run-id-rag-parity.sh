@@ -10,6 +10,11 @@
 # Outputs land in benchmarks/reports/id-rag-parity/<fixture>/<model>/run-<n>/
 # Per-invocation log: benchmarks/reports/id-rag-parity/run.log
 #
+# Overwrite guard: cells whose output JSON already exists are skipped by
+# default to protect prior matrix data. To re-run a populated matrix from
+# scratch, invoke with `FORCE=1 scripts/run-id-rag-parity.sh` or delete
+# the target cells under reports/id-rag-parity/ first.
+#
 # Runtime: tsx (installed as devDependency). Source files live in
 # verification/shared/id-rag-parallel/runners/ — moved there during a
 # repo refactor; the previous benchmarks/src/ path is no longer present.
@@ -38,7 +43,15 @@ RUNNERS=(recall-over-time action-alignment)
 TOTAL=$(( ${#FIXTURES[@]} * ${#MODELS[@]} * ${#RUNS[@]} * ${#RUNNERS[@]} ))
 log "matrix start — $TOTAL invocations planned"
 
+FORCE="${FORCE:-0}"
+if [ "$FORCE" = "1" ]; then
+  log "FORCE=1 set — existing cells WILL be overwritten"
+else
+  log "overwrite guard active — existing cells will be skipped (set FORCE=1 to re-run)"
+fi
+
 i=0
+skipped=0
 for fixture in "${FIXTURES[@]}"; do
   for model in "${MODELS[@]}"; do
     for run in "${RUNS[@]}"; do
@@ -46,6 +59,14 @@ for fixture in "${FIXTURES[@]}"; do
         i=$((i+1))
         outdir="$REPORTS/$fixture/${model//\//_}/run-$run"
         mkdir -p "$outdir"
+        outjson="$outdir/${runner}.json"
+
+        if [ -f "$outjson" ] && [ "$FORCE" != "1" ]; then
+          log "[$i/$TOTAL] $runner $fixture/$model/run-$run — output exists, skipping (set FORCE=1 to overwrite)"
+          skipped=$((skipped+1))
+          continue
+        fi
+
         log "[$i/$TOTAL] $runner fixture=$fixture model=$model run=$run"
 
         npx tsx "runners/${runner}.ts" \
@@ -66,4 +87,4 @@ for fixture in "${FIXTURES[@]}"; do
   done
 done
 
-log "matrix complete — see $REPORTS for per-fixture results"
+log "matrix complete — skipped=$skipped of $TOTAL — see $REPORTS for per-fixture results"

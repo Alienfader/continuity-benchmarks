@@ -31,6 +31,7 @@ def _resolve(candidates):
     return candidates[0]
 
 _HERE = Path(__file__).resolve().parent
+REPO = _HERE.parent
 
 # CLI override — `--reports-root <path>` lets us target the v2 outputs
 # without editing the resolution candidates. ENV var fallback for
