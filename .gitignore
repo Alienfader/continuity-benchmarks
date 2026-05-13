@@ -12,4 +12,11 @@ reports/middleware-pilot/
 # Continuity
 SESSION_HANDOFF.md
 .continuity/
+
+# LongMemEval raw dataset + generated subsamples — regeneratable from the
+# subsample script with a fixed seed; not tracked to keep the repo lean.
+fixtures/longmemeval/longmemeval_s_cleaned.json
+fixtures/longmemeval/longmemeval_m_cleaned.json
+fixtures/longmemeval/longmemeval_oracle.json
+fixtures/longmemeval/sample-*.json
 reports/
