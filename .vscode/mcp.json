@@ -2,9 +2,9 @@
   "servers": {
     "continuity": {
       "type": "stdio",
-      "command": "node",
+      "command": "/home/alienfader/.nvm/versions/node/v22.22.0/bin/node",
       "args": [
-        "c:\\Users\\Alienfader\\.vscode\\extensions\\hackerware.continuity-ultimate-3.0.4\\packages\\mcp-server\\dist\\index.js"
+        "/home/alienfader/.vscode-server/extensions/hackerware.continuity-ultimate-3.0.4/packages/mcp-server/dist/index.js"
       ],
       "env": {
         "CONTINUITY_MAX_INJECTIONS_PER_CATEGORY": "3",

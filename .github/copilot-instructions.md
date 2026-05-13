@@ -5,22 +5,36 @@
 This file contains project context and decisions. AI assistants should read this file for context. MCP tools are an optional enhancement for richer interaction when connected.
 
 ## Project Context
-- **Total Decisions:** 0
-- **Known Topics:** none yet
+- **Total Decisions:** 5
+- **Known Topics:** auto-draft, needs-review, architectural
 
 ## Current State
 **Repository:** continuity-benchmarks
 **Project Type:** Node.js Project | TypeScript
-**Branch:** unknown
+**Branch:** master
+**Tracking:** ahead 2, behind 0
+
+**Recent Commits:**
+- `bb5fc39 fix(runners,scripts): overwrite guards on matrix runners + REPO bugfix in re-judge`
+- `488476b fix(scripts): normalize CRLF line endings on all bash scripts`
+- `6e7ae3c Refactor scripts and documentation for ID-RAG parity and middleware pilot`
+- `2f90c9c Update recall-over-time report, add MCP configuration, and create Windows CMD installer script`
+- `f53e858 fix(scripts): correct paths for standalone repo layout`
+
+**Working Tree:**
+- M .vscode/mcp.json
 
 ## Working Memory Snapshot
-**Mode:** unknown
-**Generated At:** 2026-05-12T01:05:23.808Z
-**Startup Summary:** mode=unknown | decisions=0 | branch=unknown | fallback-files=12
-**Fallback Chain:** AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, .github/copilot-instructions.md, .continuity/INSTRUCTIONS.md, .continuity/SESSION_NOTES.md, .continuity/unfinished-task.json, .continuity/working-memory.json, SESSION_HANDOFF.md, .continuity/decisions.json, .continuity/mcp-health.json
+**Mode:** degraded-fallback
+**Generated At:** 2026-05-13T00:07:03.836Z
+**Startup Summary:** mode=degraded-fallback | decisions=5 | branch=master | health=MCP server disconnected. MCP probe timed out after 15000ms. [GitCommitDetector] Using cached audit (7 uncovered, 54min old)
+[GitCommitDetector] Startup audit: 7 uncovered commits in last 7 days (auto-drafted 0)
+[MCP] Background init completed in 12ms | fallback-files=12
+**Decision Count:** 5
+**Fallback Chain:** AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, .github/copilot-instructions.md, .continuity/INSTRUCTIONS.md, .continuity/SESSION_NOTES.md, .continuity/mcp-health.json, .continuity/unfinished-task.json, .continuity/working-memory.json, SESSION_HANDOFF.md, .continuity/decisions.json
 
 ## Resume Snapshot
-**Relevant Files:** fixtures\paydash-api\package.json
+**Relevant Files:** .vscode/mcp.json, README.md, install.cmd, package-lock.json, .env.example, .env
 
 ## Workflow
 
@@ -37,6 +51,18 @@ Use the repo-local artifacts directly — these are always available:
 **Decision logging path:** use the Continuity CLI first: `continuity log "question" "answer"`. Do not treat `.continuity/SESSION_NOTES.md` or manual `.continuity/decisions.json` edits as the logging sink.
 **Search-before-log still applies.** Check `.continuity/decisions.json` before recording a new rationale.
 
+
+## Decision Freshness
+**0 stale decisions** · 5 need review · Oldest unreviewed: 2026-05-08
+
+Stale decisions requiring attention:
+1. **1778552336806-m44e45** (score 35) — "Why: fix(middleware-replay): turn-2 force-final + multi-tool-call dispatch + too"
+2. **1778552336806-5mxpi7** (score 35) — "Why: feat(scripts): add middleware-replay pilot runner + paired analysis?"
+3. **1778552336806-zrt838** (score 35) — "Why: feat(middleware-replay): three retrieval modes — mcp-search / agent-loop / "
+4. **1778552336806-ueaekb** (score 35) — "Why: feat(middleware-replay): end-to-end MCP-client wiring + production-ranker r"
+5. **1778552336806-og4879** (score 35) — "Why: feat(runners): vendor head-to-head + bootstrap-ci + middleware-replay skele"
+
+When referencing these decisions, note their staleness. Verify they still reflect current project state before recommending based on them.
 
 ## Engineering Guardrails
 
@@ -135,7 +161,25 @@ Describe how this repository prefers to work with AI assistants.
 ---
 
 ## Recent Decisions
-*No decisions logged yet. Start logging architectural decisions!*
+1. **decision-17785523** (5/8/2026) [auto-draft, needs-review]
+   - Q: Why: fix(middleware-replay): turn-2 force-final + multi-tool-call dispatch + ...
+   - A: (Auto-drafted from commit 7d21d60 on 2026-05-08.) Please review and expand wi...
+
+2. **decision-17785523** (5/8/2026) [auto-draft, needs-review]
+   - Q: Why: feat(scripts): add middleware-replay pilot runner + paired analysis?
+   - A: (Auto-drafted from commit 508c611 on 2026-05-08.) Please review and expand wi...
+
+3. **decision-17785523** (5/8/2026) [auto-draft, needs-review]
+   - Q: Why: feat(middleware-replay): three retrieval modes — mcp-search / agent-loop...
+   - A: (Auto-drafted from commit 2aa7ba9 on 2026-05-08.) Please review and expand wi...
+
+4. **decision-17785523** (5/8/2026) [auto-draft, needs-review]
+   - Q: Why: feat(middleware-replay): end-to-end MCP-client wiring + production-ranke...
+   - A: (Auto-drafted from commit d7d0781 on 2026-05-08.) Please review and expand wi...
+
+5. **decision-17785523** (5/8/2026) [auto-draft, needs-review]
+   - Q: Why: feat(runners): vendor head-to-head + bootstrap-ci + middleware-replay sk...
+   - A: (Auto-drafted from commit 9732c8e on 2026-05-08.) Please review and expand wi...
 
 ---
 
@@ -155,6 +199,6 @@ Describe how this repository prefers to work with AI assistants.
 
 ---
 
-*Auto-generated by Continuity v2.3+ | Updated: 2026-05-12*
+*Auto-generated by Continuity v2.3+ | Updated: 2026-05-13*
 
 <!-- END CONTINUITY AUTO-GENERATED CONTENT -->

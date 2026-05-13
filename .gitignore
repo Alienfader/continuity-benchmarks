@@ -12,3 +12,4 @@ reports/middleware-pilot/
 # Continuity
 SESSION_HANDOFF.md
 .continuity/
+reports/
